@@ -1,5 +1,5 @@
 import mysql.connector
-from mysql.connector import Error 
+from mysql.connector import Error  # ✅ correct import
 
 def connect_db():
     try:
@@ -26,10 +26,10 @@ def check_uid(read_uid):
             result = cursor.fetchone()
 
             if result:
-                print(f"UID '{read_uid}' found in database. Logging time...")
+                print(f"✅ UID '{read_uid}' found in database. Logging time...")
                 add_time()
             else:
-                print(f"UID '{read_uid}' not found. No action taken.")
+                print(f"❌ UID '{read_uid}' not found. No action taken.")
 
         except Error as e:
             print("Error during UID check:", e)
@@ -46,7 +46,7 @@ def add_time():
             query = "INSERT INTO time_logs () VALUES ()"
             cursor.execute(query)
             conn.commit()
-            print("Timestamp added.")
+            print("✅ Timestamp added.")
         except Error as e:
             print("Insert error:", e)
         finally:
