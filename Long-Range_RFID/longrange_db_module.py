@@ -39,7 +39,7 @@ def check_uid(read_uid, display):
 
                 # Update the GUI using the passed display instance
                 display.root.after(0, display.update_car_info, new_data)
-                
+                return new_data
             else:
                 print(f"UID '{read_uid}' not found. No action taken.")
                 new_data = {
@@ -54,7 +54,7 @@ def check_uid(read_uid, display):
                 }
                 # Update the GUI using the passed display instance
                 display.root.after(0, display.update_car_info, new_data)
-
+                return new_data
         except Error as e:
             print("Error during UID check:", e)
         finally:
