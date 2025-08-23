@@ -1,11 +1,11 @@
 import serial
 import os
 import sys
-from db_module import check_uid
+from longrange_db_module import check_uid
 import time
 from subprocess import Popen 
 from display_gui import CarInfoDisplay
-from db_module import fetch_info
+from longrange_db_module import fetch_info
 
 # Check if the platform supports RPi.GPIO (only on Raspberry Pi)
 def import_gpio():
@@ -67,7 +67,8 @@ def run_rfid_read(display):
             response_data = ser.read(ser.inWaiting())
 
             if response_data:
-                print(f"Received raw response: {response_data.hex()}")
+                raw_response = response_data.hex()
+                print(f"Received raw response:v", raw_response)
 
                 if len(response_data) >= 4 and \
                    response_data[0] == 0x0A and \
@@ -79,7 +80,8 @@ def run_rfid_read(display):
                     if epc_data_bytes:
                         try:
                             tag_id = epc_data_bytes.decode('ascii').strip()
-                            if tag_id == "none":
+
+                            if raw_response == "0a550d0a":
                                 print("No tag detected in RF field.")
                                 if last_data:
                                     display.root.after(0, display.update_car_info, last_data)
@@ -90,16 +92,19 @@ def run_rfid_read(display):
                                 print(f"Detected EPC: {actual_epc}")
                                 
                                 if actual_epc != last_read: 
-                                    check_uid(actual_epc, display)
                                     last_read = actual_epc
-                                    last_data = fetch_info(actual_epc)
+                                    last_data = check_uid(actual_epc, display)
                                 else:
                                     print("Skipping duplicate")
+                                    if last_data is not None:                   
+                                        display.root.after(0, display.update_car_info, last_data)
 
                         except UnicodeDecodeError:
                             print("Error decoding EPC data. It might not be ASCII hex characters as expected.")
                     else:
                         print("Received 'U' response with no data (likely 'none' for no tag).")
+                        if last_data is not None:                    # <-- guard against None
+                                        display.root.after(0, display.update_car_info, last_data)
                 else:
                     print("Received unexpected response format for 'U' command.")
             else:

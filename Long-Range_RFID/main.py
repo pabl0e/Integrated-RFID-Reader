@@ -1,4 +1,4 @@
-from db_module import *
+from longrange_db_module import *
 from longrange_rfid_module import run_rfid_read  # Import the existing RFID reader function
 from display_gui import CarInfoDisplay  # Import the CarInfoDisplay class
 import threading
