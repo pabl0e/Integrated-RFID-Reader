@@ -1,5 +1,6 @@
 import mysql.connector
 from mysql.connector import Error  
+from contextlib import closing
 
 def connect_maindb():
     try:
@@ -149,4 +150,154 @@ def fetch_info(vehicle_id):
         cursor.close()
         conn.close()
 
-    
+def copy_table(source_conn, dest_conn, table_name, batch_size=500, insert_ignore=True):
+    """
+    Copy an entire table from source_conn to dest_conn in small batches.
+
+    Args:
+        source_conn: MySQL connection to copy FROM (e.g., main DB).
+        dest_conn:   MySQL connection to copy TO   (e.g., local Pi DB).
+        table_name:  Name of the table to copy (must exist on both).
+        batch_size:  Number of rows to move per chunk (limits memory).
+        insert_ignore: If True, uses INSERT IGNORE to skip duplicate-key errors.
+                       (Assumes appropriate unique keys/PK exist.)
+    """
+    # Create cursors for both DBs and ensure they are closed after use
+    with closing(dest_conn.cursor()) as dcur, closing(source_conn.cursor()) as scur:
+        # Speed bulk operation on destination: temporarily disable FK checks
+        # (Avoids constraints firing on each row during TRUNCATE/INSERT)
+        dcur.execute("SET FOREIGN_KEY_CHECKS=0")
+
+        # Clear destination table so we replace it with the source snapshot
+        dcur.execute(f"TRUNCATE TABLE `{table_name}`")
+
+        # Select everything from the source table
+        scur.execute(f"SELECT * FROM `{table_name}`")
+
+        # Build a generic INSERT that matches the source column order
+        cols = [desc[0] for desc in scur.description]  # column names from SELECT
+        placeholders = ", ".join(["%s"] * len(cols))   # %s for each column
+        collist = ", ".join(f"`{c}`" for c in cols)    # backticked col names
+
+        # Optional INSERT IGNORE to avoid duplicate errors (if keys overlap)
+        insert_kw = "INSERT IGNORE" if insert_ignore else "INSERT"
+        insert_sql = f"{insert_kw} INTO `{table_name}` ({collist}) VALUES ({placeholders})"
+
+        # Stream rows in batches—keeps RAM usage low on the Pi
+        while True:
+            rows = scur.fetchmany(batch_size)  # get next chunk
+            if not rows:
+                break
+            dcur.executemany(insert_sql, rows)  # push chunk to dest
+            dest_conn.commit()                  # commit each chunk (safer on Pi)
+
+        # Re-enable FK checks after bulk load
+        dcur.execute("SET FOREIGN_KEY_CHECKS=1")
+
+def sync_databases(
+    batch_size: int = 300,
+    evidence_table: str = "vehicle_evidence",
+    tag_table: str = "rfid_tags",
+    user_table: str = "user_profiles",   # use your exact table name
+    vehicle_table: str = "vehicles",
+    insert_ignore: bool = True
+) -> dict:
+    """
+    Lightweight two-way sync tailored for a Raspberry Pi Zero W.
+
+    Steps:
+        1) Append local evidence -> main DB (batched)
+        2) Purge local evidence table (after successful upload)
+        3) Refresh local reference tables from main DB:
+           rfid_tags, user_profiles, vehicles
+
+    Args:
+        batch_size: rows per batch for memory/CPU control.
+        evidence_table: name of the evidence table to upload (local -> main).
+        tag_table, user_table, vehicle_table: reference tables to mirror (main -> local).
+        insert_ignore: if True, use INSERT IGNORE during inserts to avoid duplicate-key errors.
+
+    Returns:
+        dict with basic counters and status.
+    """
+    # Acquire connections. Reuse your existing helpers from your module.
+    main_conn = connect_maindb()   # authoritative, cloud/central
+    local_conn = connect_localdb() # Raspberry Pi local DB
+
+    # If either connection fails, abort early with a clear error
+    if not main_conn or not local_conn:
+        return {"ok": False, "error": "DB connection failed (main or local)."}
+
+    # Accumulate simple stats for visibility/logging
+    stats = {
+        "uploaded_evidence_rows": 0,  # how many evidence rows pushed to main
+        "refreshed_tables": [],       # which tables we mirrored back to local
+        "ok": True
+    }
+
+    try:
+        # Use context managers so cursors are always closed
+        with closing(local_conn.cursor()) as lcur, closing(main_conn.cursor()) as mcur:
+            # ------------------ 1) Upload local evidence -> main ------------------
+            # We stream all columns (SELECT *). This requires same column order and types.
+            lcur.execute(f"SELECT * FROM `{evidence_table}`")
+            evidence_cols = [d[0] for d in lcur.description]   # column names as returned by SELECT
+            placeholders = ", ".join(["%s"] * len(evidence_cols))
+            collist = ", ".join(f"`{c}`" for c in evidence_cols)
+
+            # INSERT IGNORE prevents duplicate-key errors from breaking the sync
+            insert_kw = "INSERT IGNORE" if insert_ignore else "INSERT"
+            ev_insert_sql = f"{insert_kw} INTO `{evidence_table}` ({collist}) VALUES ({placeholders})"
+
+            # Fetch and forward evidence rows in small chunks
+            while True:
+                rows = lcur.fetchmany(batch_size)  # pull next chunk from local
+                if not rows:
+                    break
+                mcur.executemany(ev_insert_sql, rows)  # push chunk to main
+                main_conn.commit()                     # commit each chunk
+                stats["uploaded_evidence_rows"] += len(rows)
+
+            # ------------------ 2) Purge local evidence (post-upload) -------------
+            # Only clear local evidence after successful upload to main.
+            with closing(local_conn.cursor()) as lpurge:
+                lpurge.execute(f"TRUNCATE TABLE `{evidence_table}`")
+                local_conn.commit()
+
+            # ------------------ 3) Refresh local reference tables -----------------
+            # Pull authoritative copies of these tables from main back to local.
+            for tname in (tag_table, user_table, vehicle_table):
+                copy_table(
+                    source_conn=main_conn,     # FROM main (authoritative)
+                    dest_conn=local_conn,      # TO local (Pi)
+                    table_name=tname,
+                    batch_size=batch_size,
+                    insert_ignore=insert_ignore
+                )
+                stats["refreshed_tables"].append(tname)
+
+        # If we got here, everything finished without raising an exception
+        return stats
+
+    # MySQL-specific failures (e.g., connectivity, SQL syntax, constraint issues)
+    except Error as e:
+        stats["ok"] = False
+        stats["error"] = f"MySQL error: {e}"
+        return stats
+
+    # Any other unexpected Python/runtime errors
+    except Exception as e:
+        stats["ok"] = False
+        stats["error"] = f"Unexpected error: {e}"
+        return stats
+
+    # Always attempt to close connections, even on error
+    finally:
+        try:
+            local_conn.close()
+        except Exception:
+            pass
+        try:
+            main_conn.close()
+        except Exception:
+            pass
