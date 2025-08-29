@@ -3,6 +3,8 @@ from longrange_rfid_module import run_rfid_read  # Import the existing RFID read
 from display_gui import CarInfoDisplay  # Import the CarInfoDisplay class
 import threading
 
+'''Python Scripts for Exit Longrange Module'''
+
 def main():
     """Main function to run the application"""
     # Create an instance of CarInfoDisplay (initialize the GUI)

@@ -33,7 +33,7 @@ def check_uid(read_uid, display):
             if result:
                 print(f"UID '{read_uid}' found in database. Logging time...")
                 vehicle_id = result[2]
-                add_access_log(vehicle_id, read_uid, 'entry', 'entrance')
+                add_access_log(vehicle_id, read_uid, 'exit', 'exit')
 
                 new_data = fetch_info(vehicle_id)
 
