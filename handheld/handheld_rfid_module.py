@@ -84,13 +84,11 @@ def run_rfid_read():
                                 crc16 = tag_id[-4:]
                                 print(f"Detected EPC: {actual_epc}")
                                 check_uid(actual_epc)
-                              
+                                break                   #returns to main 
                         except UnicodeDecodeError:
                             print("Error decoding EPC data. It might not be ASCII hex characters as expected.")
-                    else:
-                        print("Received 'U' response with no data (likely 'none' for no tag).")
-                        #if last_data is not None:                    # <-- guard against None
-                                        
+                    else:       
+                        print("Received 'U' response with no data (likely 'none' for no tag).")              
                 else:
                     print("Received unexpected response format for 'U' command.")
             else:
