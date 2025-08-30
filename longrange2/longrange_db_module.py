@@ -1,7 +1,8 @@
 import mysql.connector
 from mysql.connector import Error  
+from display_gui import CarInfoDisplay
 
-def connect_maindb():
+def connect_db():
     try:
         conn = mysql.connector.connect(
             #host='192.168.50.239',          # FRANZ Laptop (NCR)
@@ -18,23 +19,8 @@ def connect_maindb():
         print("Database connection error:", e)
         return None
 
-def connect_localdb():
-    try:
-        conn = mysql.connector.connect(
-            host='localhost',          # Local Device
-            user='jicmugot16',
-            password='melonbruh123',
-            database='local_db'
-        )
-        print("Connected to the Database Successfully")
-        return conn
-    
-    except Error as e:
-        print("Database connection error:", e)
-        return None
-    
-def check_uid(read_uid):
-    conn = connect_localdb()
+def check_uid(read_uid, display):
+    conn = connect_db()
     if conn:
         try:
             cursor = conn.cursor()
@@ -47,9 +33,13 @@ def check_uid(read_uid):
             if result:
                 print(f"UID '{read_uid}' found in database. Logging time...")
                 vehicle_id = result[2]
+                add_access_log(vehicle_id, read_uid, 'exit', 'exit')
 
                 new_data = fetch_info(vehicle_id)
-                
+
+                # Update the GUI using the passed display instance
+                display.root.after(0, display.update_car_info, new_data)
+                return new_data
             else:
                 print(f"UID '{read_uid}' not found. No action taken.")
                 new_data = {
@@ -62,19 +52,43 @@ def check_uid(read_uid):
                     'vehicle_type': 'N/A',
                     'license_plate': 'N/A'
                 }
-
+                # Update the GUI using the passed display instance
+                display.root.after(0, display.update_car_info, new_data)
+                return new_data
         except Error as e:
             print("Error during UID check:", e)
         finally:
             cursor.close()
             conn.close()
 
+def add_access_log(vehicle_id, tag_uid, entry_type, location):
+    conn = connect_db()
+    if not conn:
+        return
+
+    try:
+        cursor = conn.cursor()
+        query = """
+            INSERT INTO access_logs
+              (vehicle_id, tag_uid, entry_type, timestamp, location)
+            VALUES
+              (%s,         %s,      %s,         CURRENT_TIMESTAMP, %s)
+        """
+        cursor.execute(query, (vehicle_id, tag_uid, entry_type, location))
+        conn.commit()
+        print("Access log added.")
+    except Error as e:
+        print("Insert error:", e)
+    finally:
+        cursor.close()
+        conn.close()
+
 def fetch_info(vehicle_id):
     """
     Fetch sticker status from the RFID tag table, then user ID, student name,
     make, model, color, vehicle type, and license plate for a given vehicle_id.
     """
-    conn = connect_localdb()
+    conn = connect_db()
     if not conn:
         return {
             'sticker_status': 'N/A',
