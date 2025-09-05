@@ -5,7 +5,7 @@
 # PYTHON_ARGCOMPLETE_OK
 
 """
-Capture photo with picamera and display it on a screen.
+Capture photo with picamera, display it on a screen, and save it to a file.
 
 Requires picamera to be installed.
 """
@@ -28,9 +28,10 @@ except ImportError:
 
 def main():
 
+    # --- Configuration Variables ---
     cameraResolution = (1024, 768)
     displayTime = 5
-    countdownTime = 5
+    countdownTime = 5  # The countdown duration in seconds
 
     picam2 = Picamera2()
     config = picam2.create_still_configuration(main={'size': cameraResolution})
@@ -38,14 +39,12 @@ def main():
 
     print("Starting camera preview...")
     picam2.start()
-    time.sleep(2)
 
-    # --- Start of Added Countdown ---
-    print("Get ready to smile! Taking a picture in...")
+    # --- Countdown Logic ---
+    print("Get ready! Taking a picture in...")
     for i in range(countdownTime, 0, -1):
         print(f"{i}...")
         time.sleep(1)
-    # --- End of Added Countdown ---
 
     print("Capturing photo...")
     image_array = picam2.capture_array()
@@ -53,10 +52,23 @@ def main():
     print("Stopping camera preview...")
     picam2.stop()
 
-    print(f"Displaying photo for {displayTime} seconds...")
-
     # Convert numpy array to PIL Image
     photo = Image.fromarray(image_array)
+    
+    # --- Start of Added Save Logic ---
+    try:
+        # Create a filename with a timestamp
+        timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"capture_{timestamp}.jpg"
+        
+        # Save the image to the file
+        photo.save(filename)
+        print(f"Image successfully saved as {filename}")
+    except Exception as e:
+        print(f"Error: Failed to save image. {e}")
+    # --- End of Added Save Logic ---
+
+    print(f"Displaying photo for {displayTime} seconds...")
 
     # Resize to device size if needed
     if photo.size != device.size:
