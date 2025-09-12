@@ -31,9 +31,11 @@ def run_rfid_read(display):
     GPIO = import_gpio()  # This is where the import happens
     last_read = None
     last_data = None
+    last_payload = None
     try:
         ser = serial.Serial(
-            port='/dev/ttyUSB0',  # Ensure this is the correct serial port
+            port='/dev/ttyUSB0',
+            #port='/dev/serial0',  # Ensure this is the correct serial port
             baudrate=38400,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
@@ -83,8 +85,8 @@ def run_rfid_read(display):
 
                             if raw_response == "0a550d0a":
                                 print("No tag detected in RF field.")
-                                if last_data:
-                                    display.root.after(0, display.update_car_info, last_data)
+                                if last_payload:
+                                    display.root.after(0, display.update_car_info, last_payload['data'], last_payload.get('photo'))
                             else:
                                 pc = tag_id[0:4]
                                 actual_epc = tag_id[4:-4]
@@ -93,18 +95,24 @@ def run_rfid_read(display):
                                 
                                 if actual_epc != last_read: 
                                     last_read = actual_epc
-                                    last_data = check_uid(actual_epc, display)
+                                    payload = check_uid(actual_epc, display)  # may return {'data':..., 'photo':...} or just new_data
+                                    # normalize to a consistent structure and keep old last_data for backward compatibility
+                                    if isinstance(payload, dict) and 'data' in payload:
+                                        last_payload = payload
+                                    else:
+                                        last_payload = {'data': payload, 'photo': None}
+                                    last_data = last_payload['data']  # keep your old variable usable
                                 else:
                                     print("Skipping duplicate")
-                                    if last_data is not None:                   
-                                        display.root.after(0, display.update_car_info, last_data)
+                                    if last_payload:
+                                        display.root.after(0, display.update_car_info, last_payload['data'], last_payload.get('photo'))
 
                         except UnicodeDecodeError:
                             print("Error decoding EPC data. It might not be ASCII hex characters as expected.")
                     else:
                         print("Received 'U' response with no data (likely 'none' for no tag).")
-                        if last_data is not None:                    # <-- guard against None
-                                        display.root.after(0, display.update_car_info, last_data)
+                        if last_payload:
+                            display.root.after(0, display.update_car_info, last_payload['data'], last_payload.get('photo'))
                 else:
                     print("Received unexpected response format for 'U' command.")
             else:
