@@ -1,147 +1,188 @@
 import tkinter as tk
+from tkinter import font as tkfont
 import sys
+from PIL import Image, ImageTk
+import io
 
 class CarInfoDisplay:
     def __init__(self):
-        # Initialize the main window
         print("CarInfoDisplay: Initializing application")
         self.root = tk.Tk()
+        self._resize_job = None
+
+        # layout constants
+        self.pad = 40
+        self.left_col_w = 520  # reserved width for the photo column
+
         self.setup_window()
         self.setup_styles()
 
-        # Initialize StringVars without initial data
+        # StringVars
         self.sticker_status_var = tk.StringVar(value='')
-        self.user_id_var = tk.StringVar(value='')  # User ID StringVar
-        self.student_name_var = tk.StringVar(value='')  # Student Name StringVar
-        self.make_var = tk.StringVar(value='')
-        self.model_var = tk.StringVar(value='')
-        self.color_var = tk.StringVar(value='')
-        self.vehicle_type_var = tk.StringVar(value='')
+        self.usc_id_var        = tk.StringVar(value='')
+        self.student_name_var  = tk.StringVar(value='')
+        self.make_var          = tk.StringVar(value='')
+        self.model_var         = tk.StringVar(value='')
+        self.color_var         = tk.StringVar(value='')
+        self.vehicle_type_var  = tk.StringVar(value='')
         self.license_plate_var = tk.StringVar(value='')
 
-        # Store references to the value labels to update their colors directly
         self.sticker_status_label = None
-        self.user_id_label = None
-        self.student_name_label = None
-        self.make_label = None
-        self.model_label = None
-        self.color_label = None
-        self.vehicle_type_label = None
-        self.license_plate_label = None
+        self._profile_photo = None
 
-        # Create widgets. They will now display empty values initially
         self.create_widgets()
 
+        # initial blank photo + initial title fit
+        self.update_profile_picture(None)
+        self.fit_title_to_width()
+
+        # refit on window resize
+        self.root.bind("<Configure>", self.on_resize)
+
+    # ---------- window & styles ----------
     def setup_window(self):
-        """Configure the main window properties"""
         self.root.title("Vehicle Registration Display")
-        self.root.geometry("1920x1080")
-        self.root.configure(bg='#ffffff')  # White background
-        self.root.attributes('-fullscreen', True)  # Fullscreen
+        self.root.geometry("1920x1080")            # 16:9
+        self.root.configure(bg='#ffffff')
+        self.root.attributes('-fullscreen', True)  # ESC toggles
         self.root.bind('<Escape>', self.toggle_fullscreen)
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
     def setup_styles(self):
-        """Define text styles and colors for the display"""
-        self.title_font = ('Arial', 50, 'bold')  # Decreased font size by 5
-        self.label_font = ('Arial', 39, 'bold')  # Decreased font size by 5
-        self.value_font = ('Arial', 41, 'normal')  # Decreased font size by 5
-        self.status_font = ('Arial', 45, 'bold')  # Decreased font size by 5
+        # base sizes (title will auto-fit)
+        self.title_family = 'Arial'
+        self.title_size_max = 64
+        self.title_size_min = 34
 
-        self.bg_color = '#ffffff'
-        self.title_color = '#355E3B'
-        self.label_color = '#355E3B'
-        self.value_color = '#355E3B'
-        self.accent_color = '#FFD700'
-        self.registered_color = '#00ff00'
+        self.label_font  = ('Arial', 39, 'bold')
+        self.value_font  = ('Arial', 41, 'normal')
+        self.status_font = ('Arial', 45, 'bold')
+
+        self.bg_color        = '#ffffff'
+        self.title_color     = '#355E3B'
+        self.label_color     = '#355E3B'
+        self.value_color     = '#355E3B'
+        self.registered_color   = '#00ff00'
         self.unregistered_color = '#ff0000'
 
+    # ---------- layout ----------
     def create_widgets(self):
-        """Create and arrange all GUI elements"""
-        main_frame = tk.Frame(self.root, bg=self.bg_color)
-        main_frame.grid(row=0, column=0, sticky='nsew', padx=50, pady=50)
+        """
+        Grid (3 columns):
+          col 0: left photo
+          col 1: labels
+          col 2: values
+        """
+        self.main = tk.Frame(self.root, bg=self.bg_color)
+        self.main.grid(row=0, column=0, sticky='nsew', padx=self.pad, pady=self.pad)
 
-        for i in range(8):
-            main_frame.grid_rowconfigure(i, weight=1)
-        main_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(1, weight=2)
+        self.main.grid_columnconfigure(0, weight=1, minsize=self.left_col_w)
+        self.main.grid_columnconfigure(1, weight=1)
+        self.main.grid_columnconfigure(2, weight=2)
+        for r in range(9):
+            self.main.grid_rowconfigure(r, weight=1)
 
-        title_label = tk.Label(
-            main_frame,
-            text="VEHICLE REGISTRATION INFORMATION",
-            font=self.title_font,
-            fg=self.title_color,
-            bg=self.bg_color
+        # Left: profile picture
+        self.profile_image_label = tk.Label(self.main, bg=self.bg_color, bd=1, relief='solid')
+        self.profile_image_label.grid(row=0, column=0, rowspan=9, sticky='nsew', padx=(0, 30))
+
+        # Title across columns 1–2
+        self.title_text = "VEHICLE REGISTRATION INFORMATION"
+        self.title_label = tk.Label(
+            self.main, text=self.title_text,
+            font=(self.title_family, self.title_size_max, 'bold'),
+            fg=self.title_color, bg=self.bg_color, anchor='w'
         )
-        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 40), sticky='ew')
+        self.title_label.grid(row=0, column=1, columnspan=2, sticky='w', pady=(0, 30))
 
-        # Create information display rows, linking to StringVars
-        self.sticker_status_label = self.create_info_row(main_frame, 1, "Sticker Status:", self.sticker_status_var, is_status=True)
-        self.user_id_label = self.create_info_row(main_frame, 2, "User ID:", self.user_id_var)
-        self.student_name_label = self.create_info_row(main_frame, 3, "Student Name:", self.student_name_var)
-        self.make_label = self.create_info_row(main_frame, 4, "Make:", self.make_var)
-        self.model_label = self.create_info_row(main_frame, 5, "Model:", self.model_var)
-        self.color_label = self.create_info_row(main_frame, 6, "Color:", self.color_var)
-        self.vehicle_type_label = self.create_info_row(main_frame, 7, "Vehicle Type:", self.vehicle_type_var)
-        self.license_plate_label = self.create_info_row(main_frame, 8, "License Plate:", self.license_plate_var)
-
-        # Removed instructions label to free up space for the important information
+        # Info rows
+        self.sticker_status_label = self.create_info_row(self.main, 1, "Sticker Status:", self.sticker_status_var, is_status=True)
+        self.create_info_row(self.main, 2, "USC ID:",        self.usc_id_var)
+        self.create_info_row(self.main, 3, "Full Name:",     self.student_name_var)
+        self.create_info_row(self.main, 4, "Make:",          self.make_var)
+        self.create_info_row(self.main, 5, "Model:",         self.model_var)
+        self.create_info_row(self.main, 6, "Color:",         self.color_var)
+        self.create_info_row(self.main, 7, "Vehicle Type:",  self.vehicle_type_var)
+        self.create_info_row(self.main, 8, "License Plate:", self.license_plate_var)
 
     def create_info_row(self, parent, row, label_text, textvariable, is_status=False):
-        """Create a row displaying a label and its corresponding textvariable"""
-        label = tk.Label(
-            parent,
-            text=label_text,
-            font=self.label_font,
-            fg=self.label_color,
-            bg=self.bg_color,
-            anchor='w'  # Align the label to the left for better readability
-        )
-        label.grid(row=row, column=0, sticky='w', padx=(0, 30), pady=15)
+        lab = tk.Label(parent, text=label_text, font=self.label_font,
+                       fg=self.label_color, bg=self.bg_color, anchor='w')
+        lab.grid(row=row, column=1, sticky='w', padx=(0, 20), pady=10)
 
-        initial_color = self.value_color
         initial_font = self.value_font
+        initial_color = self.value_color
         if is_status:
             initial_font = self.status_font
-            if textvariable.get().lower() == 'active':
+            st = (textvariable.get() or '').lower()
+            if st == 'renewed':
                 initial_color = self.registered_color
-            elif textvariable.get() != '':
+            elif st != '':
                 initial_color = self.unregistered_color
 
-        value_label = tk.Label(
-            parent,
-            textvariable=textvariable,
-            font=initial_font,
-            fg=initial_color,
-            bg=self.bg_color,
-            anchor='w'
-        )
-        value_label.grid(row=row, column=1, sticky='w', pady=15)
-        return value_label
+        val = tk.Label(parent, textvariable=textvariable, font=initial_font,
+                       fg=initial_color, bg=self.bg_color, anchor='w')
+        val.grid(row=row, column=2, sticky='w', pady=10)
+        return val
 
+    # ---------- title auto-fit ----------
+    def fit_title_to_width(self):
+        """Shrink the title font until it fits the middle+right columns width."""
+        # Ensure geometry is updated
+        self.root.update_idletasks()
+
+        # Available width = total window - (outer pads + left column + inner gap + right pad)
+        total_w = self.root.winfo_width() or 1920
+        available = total_w - (2*self.pad + self.left_col_w + 30 + self.pad)
+        if available <= 0:
+            return
+
+        size = self.title_size_max
+        f = tkfont.Font(family=self.title_family, size=size, weight='bold')
+        while f.measure(self.title_text) > available and size > self.title_size_min:
+            size -= 2
+            f.configure(size=size)
+
+        self.title_label.configure(font=(self.title_family, size, 'bold'))
+
+    def on_resize(self, _event):
+        # Debounce rapid resize events
+        if self._resize_job is not None:
+            self.root.after_cancel(self._resize_job)
+        self._resize_job = self.root.after(120, self.fit_title_to_width)
+
+    # ---------- behavior ----------
     def toggle_fullscreen(self, event=None):
-        """Toggle fullscreen mode"""
-        current_state = self.root.attributes('-fullscreen')
-        self.root.attributes('-fullscreen', not current_state)
+        self.root.attributes('-fullscreen', not self.root.attributes('-fullscreen'))
 
     def update_status_color(self, status):
-        """Update the sticker status label color"""
-        status_text = status.lower()
+        status_text = (status or "").lower()
         if status_text == 'renewed':
             self.sticker_status_label.config(fg=self.registered_color)
         elif status_text == 'expired':
             self.sticker_status_label.config(fg=self.unregistered_color)
-        else:  # Blank or invalid status
+        else:
             self.sticker_status_label.config(fg=self.value_color)
 
-    def update_car_info(self, new_data):
-        """Method to update car information programmatically."""
+    def update_profile_picture(self, image_bytes):
+        """Set/refresh the left photo. None -> blank placeholder."""
+        if image_bytes:
+            img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        else:
+            img = Image.new('RGB', (700, 900), 'white')  # placeholder
+
+        target_w, target_h = 500, 900
+        img.thumbnail((target_w, target_h), Image.LANCZOS)
+        self._profile_photo = ImageTk.PhotoImage(img)
+        self.profile_image_label.config(image=self._profile_photo)
+
+    def update_car_info(self, new_data, profile_picture_bytes=None):
         if 'sticker_status' in new_data:
             self.sticker_status_var.set(new_data['sticker_status'])
-            self.update_status_color(new_data['sticker_status'])  # Update status label color
-        if 'user_id' in new_data:
-            self.user_id_var.set(new_data['user_id'])
+            self.update_status_color(new_data['sticker_status'])
+        if 'usc_id' in new_data:
+            self.usc_id_var.set(new_data['usc_id'])
         if 'student_name' in new_data:
             self.student_name_var.set(new_data['student_name'])
         if 'make' in new_data:
@@ -155,17 +196,24 @@ class CarInfoDisplay:
         if 'license_plate' in new_data:
             self.license_plate_var.set(new_data['license_plate'])
 
+        # refresh image (None blanks it)
+        self.update_profile_picture(profile_picture_bytes)
+
+        # re-fit title in case DPI/geometry changed
+        self.fit_title_to_width()
         print("Display updated via StringVars.")
 
     def run(self):
-        """Start the GUI application"""
         print("Starting Car Information Display...")
         print("Press ESC to exit fullscreen mode")
         print("Close window or Ctrl+C to exit application")
-
         try:
-            # Start the tkinter main loop
             self.root.mainloop()
         except KeyboardInterrupt:
             print("\nApplication terminated by user")
             sys.exit(0)
+
+# Allow running this file directly for layout testing
+if __name__ == "__main__":
+    ui = CarInfoDisplay()
+    ui.run()
