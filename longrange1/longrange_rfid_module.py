@@ -5,7 +5,7 @@ from longrange_db_module import check_uid
 import time
 from subprocess import Popen 
 from display_gui import CarInfoDisplay
-from longrange_db_module import fetch_info
+
 
 # Check if the platform supports RPi.GPIO (only on Raspberry Pi)
 def import_gpio():
@@ -34,8 +34,8 @@ def run_rfid_read(display):
     last_payload = None
     try:
         ser = serial.Serial(
-            port='/dev/ttyUSB0',
-            #port='/dev/serial0',  # Ensure this is the correct serial port
+            #port='/dev/ttyUSB0',
+            port='/dev/serial0',  # Ensure this is the correct serial port
             baudrate=38400,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
@@ -92,16 +92,16 @@ def run_rfid_read(display):
                                 actual_epc = tag_id[4:-4]
                                 crc16 = tag_id[-4:]
                                 print(f"Detected EPC: {actual_epc}")
-                                
+
                                 if actual_epc != last_read: 
                                     last_read = actual_epc
                                     payload = check_uid(actual_epc, display)  # may return {'data':..., 'photo':...} or just new_data
-                                    # normalize to a consistent structure and keep old last_data for backward compatibility
                                     if isinstance(payload, dict) and 'data' in payload:
                                         last_payload = payload
                                     else:
                                         last_payload = {'data': payload, 'photo': None}
-                                    last_data = last_payload['data']  # keep your old variable usable
+                                    last_data = last_payload['data']
+                                    
                                 else:
                                     print("Skipping duplicate")
                                     if last_payload:
@@ -127,13 +127,11 @@ def run_rfid_read(display):
             time.sleep(5)
             try:
                 ser.open()
-                print("Serial port re-opened successfully.")
+                print("Serial port reopened successfully.")
             except serial.SerialException as e_reopen:
-                print(f"Failed to re-open serial port: {e_reopen}")
-                print("Exiting script due to persistent serial port issues.")
+                print(f"Failed to reopen serial port: {e_reopen}")
                 sys.exit(1)
 
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             sys.exit(1)
-
