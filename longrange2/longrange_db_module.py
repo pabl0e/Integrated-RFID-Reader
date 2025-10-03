@@ -1,87 +1,133 @@
 import mysql.connector
+import time
 from mysql.connector import Error  
 from display_gui import CarInfoDisplay
 
+# Cache settings
+TAG_CACHE_TTL = 300.0  # seconds (UID TTL cache time)
+_tag_cache = {}        # {uid: (timestamp, {'data':..., 'photo':...})}
+
+def _get_cached(uid):
+    """Retrieve cached UID data if it's still valid."""
+    now = time.time()
+    hit = _tag_cache.get(uid)
+    if hit and (now - hit[0]) < TAG_CACHE_TTL:
+        return hit[1]
+    return None
+
+def _put_cached(uid, payload):
+    """Store the UID data in cache."""
+    _tag_cache[uid] = (time.time(), payload)
+    if len(_tag_cache) > 200:
+        _tag_cache.pop(next(iter(_tag_cache)))
+
 def connect_db():
+    """Set up the MySQL connection with connection pooling."""
     try:
         conn = mysql.connector.connect(
-            #host='192.168.50.239',           # FRANZ Laptop (NCR)
-            #host='192.168.50.200',           # MUGOT Laptop (NCR)
-            #host='192.168.20.238',           # MUGOT Laptop (DML)
-            #host='192.168.20.',                # FRANZ Laptop (DML)  
-            #host='192.168.254.135',          # MUGOT Laptop (Vince House)   
-            #host='192.168.1.47',           # MUGOT Laptop (Mugot House)     
+            host='192.168.50.216',  # Replace with your DB host IP or hostname
             user='jicmugot16',
             password='melonbruh123',
-            database='rfid_vehicle_system'
+            database='rfid_vehicle_system',
+            autocommit=True  # Enable auto commit to avoid unnecessary round trips
         )
-        print("Connected to the Database Successfully")
         return conn
-    
     except Error as e:
         print("Database connection error:", e)
         return None
 
 def check_uid(read_uid, display):
+    """Optimized function to check UID in the database and return user info + photo."""
+    # Check the cache first
+    cached_data = _get_cached(read_uid)
+    if cached_data:
+        display.root.after(0, display.update_car_info, cached_data['data'], cached_data.get('photo'))
+        return cached_data
+
     conn = connect_db()
-    if conn:
+    if not conn:
+        # If no DB connection, return empty data with None for photo
+        empty_data = {k: 'N/A' for k in
+                    ['sticker_status','usc_id','student_name','make','model','color','vehicle_type','license_plate']}
+        display.root.after(0, display.update_car_info, empty_data, None)
+        return {'data': empty_data, 'photo': None}
+
+    try:
+        cursor = conn.cursor()
+
+        # Perform a single JOIN query to fetch everything
+        query = """
+            SELECT
+                t.status,
+                v.usc_id,
+                COALESCE(up.full_name, ''),
+                v.make,
+                v.model,
+                v.color,
+                v.vehicle_type,
+                v.plate_number,
+                up.profile_picture,
+                up.file_type
+            FROM rfid_tags AS t
+            JOIN vehicles AS v ON v.vehicle_id = t.vehicle_id
+            LEFT JOIN user_profiles AS up ON up.usc_id = v.usc_id
+            WHERE t.tag_uid = %s
+            LIMIT 1
+        """
+        cursor.execute(query, (read_uid,))
+        result = cursor.fetchone()
+
+        if not result:
+            # No matching UID found in the DB
+            empty_data = {k: 'N/A' for k in
+                        ['sticker_status','usc_id','student_name','make','model','color','vehicle_type','license_plate']}
+            display.root.after(0, display.update_car_info, empty_data, None)
+            return {'data': empty_data, 'photo': None}
+
+        # Unpack query results
+        (status, usc_id, full_name, make, model, color, vehicle_type, plate_number, blob, file_type) = result
+
+        data = {
+            'sticker_status': status,
+            'usc_id': str(usc_id),
+            'student_name': full_name,
+            'make': make,
+            'model': model,
+            'color': color,
+            'vehicle_type': vehicle_type,
+            'license_plate': plate_number
+        }
+
+        photo = bytes(blob) if blob else None
+
+        # Store the result in cache for future use
+        _put_cached(read_uid, {'data': data, 'photo': photo})
+
+        # --- Add Access Log Entry ---
+        add_access_log(data['usc_id'], read_uid, 'exit', 'exit')  # Insert log when UID is matched
+
+        # Update the GUI with the fetched data
+        display.root.after(0, display.update_car_info, data, photo)
+
+        # Return the data and photo
+        return {'data': data, 'photo': photo}
+
+    except Error as e:
+        print("Error during UID check:", e)
+        error_data = {k: 'Error' for k in
+                    ['sticker_status','usc_id','student_name','make','model','color','vehicle_type','license_plate']}
+        display.root.after(0, display.update_car_info, error_data, None)
+        return {'data': error_data, 'photo': None}
+
+    finally:
         try:
-            cursor = conn.cursor()
-
-            # Check if the tag_uid exists in rfid_tags
-            query = "SELECT * FROM rfid_tags WHERE tag_uid = %s"
-            cursor.execute(query, (read_uid,))
-            result = cursor.fetchone()
-
-            if result:
-                print(f"UID '{read_uid}' found in database. Logging time...")
-                vehicle_id = result[2]
-                add_access_log(vehicle_id, read_uid, 'exit', 'exit')
-
-                # vehicle + user info
-                new_data = fetch_info(vehicle_id)
-
-                # profile picture (None if not present)
-                profile_bytes = None
-                try:
-                    # usc_id in new_data is a str; convert if numeric
-                    usc_id_num = int(new_data['usc_id'])
-                except Exception:
-                    usc_id_num = new_data['usc_id']
-
-                pic = fetch_profile_picture(usc_id_num)
-                if pic and pic.get('profile_image_bytes'):
-                    profile_bytes = pic['profile_image_bytes']
-
-                # update GUI
-                display.root.after(0, display.update_car_info, new_data, profile_bytes)
-
-                # return both for caller reuse
-                return {'data': new_data, 'photo': profile_bytes}
-
-            else:
-                print(f"UID '{read_uid}' not found. No action taken.")
-                new_data = {
-                    'sticker_status': 'N/A',
-                    'usc_id': 'N/A',
-                    'student_name': 'N/A',
-                    'make': 'N/A',
-                    'model': 'N/A',
-                    'color': 'N/A',
-                    'vehicle_type': 'N/A',
-                    'license_plate': 'N/A'
-                }
-                # pass None so GUI shows blank placeholder
-                display.root.after(0, display.update_car_info, new_data, None)
-                return {'data': new_data, 'photo': None}
-
-        except Error as e:
-            print("Error during UID check:", e)
-        finally:
             cursor.close()
-            conn.close()
-            
+        except Exception as e:
+            print(f"Error closing cursor: {e}")
+        conn.close()
+
 def add_access_log(vehicle_id, tag_uid, entry_type, location):
+    """Add an access log entry for when an RFID tag is scanned."""
     conn = connect_db()
     if not conn:
         return
@@ -90,138 +136,14 @@ def add_access_log(vehicle_id, tag_uid, entry_type, location):
         cursor = conn.cursor()
         query = """
             INSERT INTO access_logs
-              (vehicle_id, tag_uid, entry_type, timestamp, location)
-            VALUES
-              (%s,         %s,      %s,         CURRENT_TIMESTAMP, %s)
+            (vehicle_id, tag_uid, entry_type, timestamp, location)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s)
         """
         cursor.execute(query, (vehicle_id, tag_uid, entry_type, location))
         conn.commit()
         print("Access log added.")
     except Error as e:
-        print("Insert error:", e)
+        print(f"Error inserting access log: {e}")
     finally:
         cursor.close()
-        conn.close()
-
-def fetch_info(vehicle_id):
-    """
-    Fetch sticker status from the RFID tag table, then user ID, student name,
-    make, model, color, vehicle type, and license plate for a given vehicle_id.
-    """
-    conn = connect_db()
-    if not conn:
-        return {
-            'sticker_status': 'N/A',
-            'usc_id': 'N/A',
-            'student_name': 'N/A',
-            'make': 'N/A',
-            'model': 'N/A',
-            'color': 'N/A',
-            'vehicle_type': 'N/A',
-            'license_plate': 'N/A'
-        }
-    try:
-        cursor = conn.cursor()
-        query = """
-            SELECT
-              rt.status AS sticker_status,
-              v.usc_id,
-              up.full_name,
-              v.make,
-              v.model,
-              v.color,
-              v.vehicle_type,
-              v.plate_number
-            FROM vehicles v
-            LEFT JOIN user_profiles up
-              ON v.usc_id = up.usc_id
-            LEFT JOIN rfid_tags rt
-              ON rt.vehicle_id = v.id
-            WHERE v.id = %s
-            LIMIT 1
-        """
-        cursor.execute(query, (vehicle_id,))
-        row = cursor.fetchone()
-        if row:
-            status, usc_id, full_name, make, model, color, vehicle_type, plate_number = row
-            print("Info Fetched Successfully")
-            return {
-                'sticker_status': status,
-                'usc_id': str(usc_id),
-                'student_name': full_name,
-                'make': make,
-                'model': model,
-                'color': color,
-                'vehicle_type': vehicle_type,
-                'license_plate': plate_number
-            }
-        else:
-            # No matching vehicle or tag
-            return {
-                'sticker_status': 'N/A',
-                'usc_id': 'N/A',
-                'student_name': 'N/A',
-                'make': 'N/A',
-                'model': 'N/A',
-                'color': 'N/A',
-                'vehicle_type': 'N/A',
-                'license_plate': 'N/A'
-            }
-    except Error as e:
-        print("Error fetching vehicle info:", e)
-        return {
-            'sticker_status': 'Error',
-            'usc_id': 'Error',
-            'student_name': 'Error',
-            'make': 'Error',
-            'model': 'Error',
-            'color': 'Error',
-            'vehicle_type': 'Error',
-            'license_plate': 'Error'
-        }
-    finally:
-        cursor.close()
-        conn.close()
-
-def fetch_profile_picture(usc_id: int):
-    """
-    Returns the profile picture for the given usc_id from user_profiles.
-    Output:
-      {
-        'profile_image_bytes': <bytes> or None,
-        'profile_image_mime': <str> or None
-      }
-    """
-    conn = connect_db()
-    if not conn:
-        return {'profile_image_bytes': None, 'profile_image_mime': None}
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT profile_picture, file_type
-            FROM user_profiles
-            WHERE usc_id = %s
-            LIMIT 1
-            """,
-            (usc_id,)
-        )
-        row = cursor.fetchone()
-        if row:
-            blob, file_type = row
-            return {
-                'profile_image_bytes': bytes(blob) if blob else None,
-                'profile_image_mime': file_type if file_type else None
-            }
-        else:
-            return {'profile_image_bytes': None, 'profile_image_mime': None}
-    except Error as e:
-        print("Error fetching profile picture:", e)
-        return {'profile_image_bytes': None, 'profile_image_mime': None}
-    finally:
-        try:
-            cursor.close()
-        except Exception:
-            pass
         conn.close()

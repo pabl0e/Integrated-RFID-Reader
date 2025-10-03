@@ -19,4 +19,4 @@ def main():
     display.run()  # This starts the Tkinter event loop and keeps the GUI running
 
 if __name__ == "__main__":
-    main()  
+    main()
