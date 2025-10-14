@@ -373,7 +373,7 @@ def sync_databases(
                 lpurge.execute(f"TRUNCATE TABLE `{evidence_table}`")
                 local_conn.commit()
 
-            # ------------------ 3) Refresh local reference tables -----------------
+            # -------------s----- 3) Refresh local reference tables -----------------
             # Pull authoritative copies of these tables from main back to local.
             for tname in (tag_table, user_table, vehicle_table):
                 copy_table(

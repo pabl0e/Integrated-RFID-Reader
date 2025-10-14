@@ -27,7 +27,7 @@ def run_rfid_read():
     
     try:
         ser = serial.Serial(
-            port='/dev/ttyUSB0',  # Ensure this is the correct serial port
+            port='/dev/serial0',  # Ensure this is the correct serial port
             baudrate=38400,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
