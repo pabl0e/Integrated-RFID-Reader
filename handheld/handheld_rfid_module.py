@@ -84,7 +84,7 @@ def run_rfid_read():
                                 crc16 = tag_id[-4:]
                                 print(f"Detected EPC: {actual_epc}")
                                 check_uid(actual_epc)
-                                break                   #returns to main 
+                                return actual_epc       # Return the scanned UID 
                         except UnicodeDecodeError:
                             print("Error decoding EPC data. It might not be ASCII hex characters as expected.")
                     else:       
@@ -112,4 +112,22 @@ def run_rfid_read():
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             sys.exit(1)
+
+def scan_rfid_for_enforcement():
+    """
+    Simplified RFID scanning function for enforcement workflow.
+    Returns the scanned UID or None if scanning failed.
+    """
+    try:
+        print("Starting RFID scan for enforcement...")
+        scanned_uid = run_rfid_read()  # This now returns the UID
+        if scanned_uid:
+            print(f"Successfully scanned RFID UID: {scanned_uid}")
+            return scanned_uid
+        else:
+            print("No RFID tag detected")
+            return None
+    except Exception as e:
+        print(f"RFID scanning error: {e}")
+        return None
 
