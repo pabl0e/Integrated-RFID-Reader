@@ -7,9 +7,10 @@ def connect_maindb():
         conn = mysql.connector.connect(
             #host='192.168.50.239',          # FRANZ Laptop (NCR)
             #host='192.168.50.200'           # MUGOT Laptop (NCR)
-            host='192.168.254.135',          # MUGOT Laptop (Vince House)        
-            user='jicmugot16',
-            password='melonbruh123',
+            # host='192.168.254.135',          # MUGOT Laptop (Vince House)     
+            host='192.168.254.107',   
+            user='binslibal',
+            password='Vinceleval423!',
             database='rfid_vehicle_system'
         )
         print("Connected to the Database Successfully")
@@ -23,8 +24,8 @@ def connect_localdb():
     try:
         conn = mysql.connector.connect(
             host='localhost',          # Local Device
-            user='jicmugot16',
-            password='melonbruh123',
+            user='binslibal',
+            password='Vinceleval423!',
             database='local_db'
         )
         print("Connected to the Database Successfully")
