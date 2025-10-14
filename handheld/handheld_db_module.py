@@ -7,9 +7,10 @@ def connect_maindb():
         conn = mysql.connector.connect(
             #host='192.168.50.239',          # FRANZ Laptop (NCR)
             #host='192.168.50.200'           # MUGOT Laptop (NCR)
-            host='192.168.254.135',          # MUGOT Laptop (Vince House)        
-            user='jicmugot16',
-            password='melonbruh123',
+            # host='192.168.254.135',          # MUGOT Laptop (Vince House)     
+            host='192.168.254.107',   
+            user='binslibal',
+            password='Vinceleval423!',
             database='rfid_vehicle_system'
         )
         print("Connected to the Database Successfully")
@@ -23,8 +24,8 @@ def connect_localdb():
     try:
         conn = mysql.connector.connect(
             host='localhost',          # Local Device
-            user='jicmugot16',
-            password='melonbruh123',
+            user='binslibal',
+            password='Vinceleval423!',
             database='local_db'
         )
         print("Connected to the Database Successfully")
@@ -69,6 +70,115 @@ def check_uid(read_uid):
         finally:
             cursor.close()
             conn.close()
+            
+        return new_data
+
+def store_evidence(rfid_uid, photo_path, violation_type, timestamp=None, location=None, device_id="HANDHELD_01"):
+    """
+    Store evidence record in the local vehicle_evidence table.
+    Falls back to JSON file storage if database connection fails.
+    
+    Args:
+        rfid_uid: The RFID tag UID that was scanned
+        photo_path: Path to the evidence photo file
+        violation_type: Type of violation selected
+        timestamp: Optional timestamp (uses current time if None)
+        location: Optional location info
+        device_id: Device identifier for tracking
+        
+    Returns:
+        dict: Success status and evidence ID if successful
+    """
+    # Use current timestamp if not provided
+    if timestamp is None:
+        import datetime
+        timestamp = datetime.datetime.now()
+    
+    # Try database storage first
+    conn = connect_localdb()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            
+            # Insert evidence record
+            insert_query = """
+                INSERT INTO vehicle_evidence 
+                (rfid_uid, photo_path, violation_type, timestamp, location, device_id, sync_status)
+                VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+            """
+            
+            cursor.execute(insert_query, (rfid_uid, photo_path, violation_type, timestamp, location, device_id))
+            conn.commit()
+            
+            evidence_id = cursor.lastrowid
+            print(f"Evidence stored successfully in database with ID: {evidence_id}")
+            
+            return {
+                "ok": True, 
+                "evidence_id": evidence_id,
+                "storage_method": "database",
+                "message": f"Evidence record created with ID {evidence_id}"
+            }
+            
+        except Error as e:
+            print(f"Database storage failed: {e}")
+        except Exception as e:
+            print(f"Unexpected database error: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+    
+    # Fallback to JSON file storage
+    try:
+        import json
+        import os
+        import uuid
+        
+        print("Falling back to JSON file storage...")
+        
+        # Create evidence directory
+        evidences_dir = "evidences"
+        os.makedirs(evidences_dir, exist_ok=True)
+        
+        # Generate unique evidence ID
+        evidence_id = str(uuid.uuid4())[:8]
+        
+        # Create evidence record
+        evidence_record = {
+            "evidence_id": evidence_id,
+            "rfid_uid": rfid_uid,
+            "photo_path": photo_path,
+            "violation_type": violation_type,
+            "timestamp": timestamp.isoformat() if hasattr(timestamp, 'isoformat') else str(timestamp),
+            "location": location,
+            "device_id": device_id,
+            "sync_status": "pending"
+        }
+        
+        # Save to JSON file
+        json_filename = f"evidence_{evidence_id}.json"
+        json_path = os.path.join(evidences_dir, json_filename)
+        
+        with open(json_path, 'w') as f:
+            json.dump(evidence_record, f, indent=2)
+        
+        print(f"Evidence stored as JSON file: {json_filename}")
+        
+        return {
+            "ok": True,
+            "evidence_id": evidence_id,
+            "storage_method": "json_file",
+            "json_file": json_path,
+            "message": f"Evidence stored as JSON file with ID {evidence_id}"
+        }
+        
+    except Exception as e:
+        print(f"JSON storage also failed: {e}")
+        return {
+            "ok": False, 
+            "error": f"Both database and JSON storage failed: {e}",
+            "storage_method": "none"
+        }
 
 def fetch_info(vehicle_id):
     """
