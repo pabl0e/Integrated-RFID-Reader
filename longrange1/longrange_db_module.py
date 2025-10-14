@@ -25,7 +25,8 @@ def connect_db():
     """Set up the MySQL connection with connection pooling."""
     try:
         conn = mysql.connector.connect(
-            host='192.168.50.216',  # Replace with your DB host IP or hostname
+            #host='192.168.50.216',  # Replace with your DB host IP or hostname
+            host='192.168.1.16',
             user='jicmugot16',
             password='melonbruh123',
             database='rfid_vehicle_system',
@@ -60,6 +61,7 @@ def check_uid(read_uid, display):
             SELECT
                 t.status,
                 v.usc_id,
+                v.vehicle_id,
                 COALESCE(up.full_name, ''),
                 v.make,
                 v.model,
@@ -67,7 +69,7 @@ def check_uid(read_uid, display):
                 v.vehicle_type,
                 v.plate_number,
                 up.profile_picture,
-                up.file_type
+                up.profile_picture_type
             FROM rfid_tags AS t
             JOIN vehicles AS v ON v.vehicle_id = t.vehicle_id
             LEFT JOIN user_profiles AS up ON up.usc_id = v.usc_id
@@ -80,16 +82,17 @@ def check_uid(read_uid, display):
         if not result:
             # No matching UID found in the DB
             empty_data = {k: 'N/A' for k in
-                        ['sticker_status','usc_id','student_name','make','model','color','vehicle_type','license_plate']}
+                        ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
             display.root.after(0, display.update_car_info, empty_data, None)
             return {'data': empty_data, 'photo': None}
 
         # Unpack query results
-        (status, usc_id, full_name, make, model, color, vehicle_type, plate_number, blob, file_type) = result
+        (status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type, plate_number, blob, file_type) = result
 
         data = {
             'sticker_status': status,
             'usc_id': str(usc_id),
+            'vehicle_id': vehicle_id,
             'student_name': full_name,
             'make': make,
             'model': model,
@@ -104,7 +107,7 @@ def check_uid(read_uid, display):
         _put_cached(read_uid, {'data': data, 'photo': photo})
 
         # --- Add Access Log Entry ---
-        add_access_log(data['usc_id'], read_uid, 'entry', 'entrance')  # Insert log when UID is matched
+        add_access_log(vehicle_id, read_uid, 'entry', 'entrance')  # Insert log when UID is matched
 
         # Update the GUI with the fetched data
         display.root.after(0, display.update_car_info, data, photo)
@@ -115,7 +118,7 @@ def check_uid(read_uid, display):
     except Error as e:
         print("Error during UID check:", e)
         error_data = {k: 'Error' for k in
-                    ['sticker_status','usc_id','student_name','make','model','color','vehicle_type','license_plate']}
+                    ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
         display.root.after(0, display.update_car_info, error_data, None)
         return {'data': error_data, 'photo': None}
 
