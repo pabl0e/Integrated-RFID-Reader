@@ -95,7 +95,19 @@ def check_uid(read_uid, display):
             'vehicle_id': vehicle_id,
             'student_name': full_name,
             'make': make,
-   :')  # Insert log when UID is matched
+            'model': model,
+            'color': color,
+            'vehicle_type': vehicle_type,
+            'license_plate': plate_number
+        }
+
+        photo = bytes(blob) if blob else None
+
+        # Store the result in cache for future use
+        _put_cached(read_uid, {'data': data, 'photo': photo})
+
+        # --- Add Access Log Entry ---
+        add_access_log(vehicle_id, read_uid, 'exit', 'exit')  # Insert log when UID is matched
 
         # Update the GUI with the fetched data
         display.root.after(0, display.update_car_info, data, photo)
