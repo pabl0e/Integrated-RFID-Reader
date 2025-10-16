@@ -1,0 +1,10 @@
+{
+  "evidence_id": "d3229446",
+  "rfid_uid": "TEST123456789",
+  "photo_path": "test_photo.jpg",
+  "violation_type": "Test Violation",
+  "timestamp": "2025-10-15T02:57:39.746864",
+  "location": "Test Location",
+  "device_id": "TEST_DEVICE",
+  "sync_status": "pending"
+}
