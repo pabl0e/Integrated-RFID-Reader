@@ -9,10 +9,10 @@ A comprehensive **RFID-based vehicle tracking and parking enforcement system** d
 This integrated system consists of **three main components**:
 
 1. **📱 Handheld Device** - Portable violation enforcement unit
-2. **🏢 Long-Range Station 1** - Entry/exit monitoring point  
-3. **🏢 Long-Range Station 2** - Secondary monitoring location
+2. **🏢 Long-Range Station 1** - Entry point 
+3. **🏢 Long-Range Station 2** - Exit point
 
-Each component can operate **independently** with local storage and **sync** with a central database when network connectivity is available.
+The handheld device can operate **independently** with local storage and **sync** with a central database when network connectivity is available.
 
 ## ✨ Key Features
 
@@ -71,16 +71,16 @@ Each component can operate **independently** with local storage and **sync** wit
 ## 🛠️ Hardware Requirements
 
 ### Handheld Device
-- **Raspberry Pi Zero W** or Raspberry Pi 4
+- **Raspberry Pi Zero W**
 - **FM-503 RFID Reader** (UHF 860-960MHz)
-- **Pi Camera Module** (v2 or HQ Camera)
-- **128x64 OLED Display** (SSD1306)
+- **Pi Camera Module** (v1 or later)
+- **128x128 Waveshare OLED  Multi-color Display** (SSD1351)
 - **Navigation Buttons** (4-button configuration)
-- **Power Bank** (5V, 2A minimum)
+- **18650 Lithium-Ion Batteries** (At least 2 pcs, Parallel configuration, 5V 1A)
 - **MicroSD Card** (32GB+ recommended)
 
 ### Long-Range Stations  
-- **Raspberry Pi 4** (4GB+ RAM recommended)
+- **Raspberry Pi Zero W** or Raspberry Pi 4
 - **FM-503 RFID Reader** (UHF long-range)
 - **HDMI Display** (1920x1080 recommended)
 - **Ethernet Connection** (for database sync)
@@ -354,19 +354,6 @@ vcgencmd get_camera
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 👥 Authors & Acknowledgments
-
-- **Primary Developer** - System architecture and implementation
-- **Hardware Integration** - RFID and camera module integration  
-- **Database Design** - MySQL schema and synchronization logic
-- **UI/UX Design** - OLED interface and GUI development
-
-## 📞 Support
-
-For support, please open an issue on GitHub or contact the development team.
-
----
 
 ## 🏷️ Project Tags
 
