@@ -682,6 +682,52 @@ def main():
         else:
             Draw_All_Elements(elements_to_draw)
         
+        time.sleep(3)  # Show initial result screen
+        
+        # Show detailed violation log summary on OLED
+        if OLED_AVAILABLE:
+            # Determine database type from storage method
+            db_type = "MySQL" if result.get('storage_method', '').lower() == 'mysql' else "Local"
+            db_status = "✓ Saved" if result["ok"] else "✗ Failed"
+            
+            # Truncate UID for display (show first 8 characters)
+            display_uid = scanned_uid[:8] if len(scanned_uid) > 8 else scanned_uid
+            
+            # Truncate violation type for display
+            violation_short = selected_violation[:20] if len(selected_violation) > 20 else selected_violation
+            if len(selected_violation) > 20:
+                violation_lines = selected_violation.split()
+                mid = len(violation_lines) // 2
+                violation_line1 = " ".join(violation_lines[:mid])[:16]
+                violation_line2 = " ".join(violation_lines[mid:])[:16]
+            else:
+                violation_line1 = violation_short
+                violation_line2 = ""
+            
+            summary_elements = [
+                ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
+                ('text', (5, 20, f"UID: {display_uid}", font), {'fill': 'cyan'}),
+                ('text', (5, 35, "Violation:", font), {'fill': 'white'}),
+                ('text', (5, 45, violation_line1, font), {'fill': 'yellow'}),
+            ]
+            
+            # Add second line of violation if needed
+            if violation_line2:
+                summary_elements.append(('text', (5, 55, violation_line2, font), {'fill': 'yellow'}))
+                db_y_pos = 70
+            else:
+                db_y_pos = 60
+            
+            # Add database status
+            summary_elements.extend([
+                ('text', (5, db_y_pos, f"DB: {db_type}", font), {'fill': 'white'}),
+                ('text', (5, db_y_pos + 15, db_status, font), {'fill': 'green' if result["ok"] else 'red'})
+            ])
+            
+            Clear_Screen()
+            Draw_All_Elements(summary_elements)
+            time.sleep(5)  # Show summary for 5 seconds
+        
         print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
         print(f"Violation Summary:")
         print(f"  ✅ RFID UID: {scanned_uid}")
