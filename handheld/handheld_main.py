@@ -708,20 +708,24 @@ def main():
             violation_id = result.get('evidence_id', 'N/A')
             display_id = str(violation_id)[:8] if len(str(violation_id)) > 8 else str(violation_id)
             
+            # Get previous violations count for this UID
+            previous_count = uid_info.get('previous_violations', 0)
+            
             summary_elements = [
                 ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
-                ('text', (5, 18, f"ID: {display_id}", font), {'fill': 'green'}),
-                ('text', (5, 30, f"UID: {display_uid}", font), {'fill': 'cyan'}),
-                ('text', (5, 42, "Violation:", font), {'fill': 'white'}),
-                ('text', (5, 52, violation_line1, font), {'fill': 'yellow'}),
+                ('text', (5, 16, f"ID: {display_id}", font), {'fill': 'green'}),
+                ('text', (5, 26, f"UID: {display_uid}", font), {'fill': 'cyan'}),
+                ('text', (5, 36, f"Past: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
+                ('text', (5, 46, "Violation:", font), {'fill': 'white'}),
+                ('text', (5, 56, violation_line1, font), {'fill': 'yellow'}),
             ]
             
             # Add second line of violation if needed
             if violation_line2:
-                summary_elements.append(('text', (5, 62, violation_line2, font), {'fill': 'yellow'}))
-                db_y_pos = 77
+                summary_elements.append(('text', (5, 66, violation_line2, font), {'fill': 'yellow'}))
+                db_y_pos = 81
             else:
-                db_y_pos = 67
+                db_y_pos = 71
             
             # Add database status
             summary_elements.extend([
@@ -737,6 +741,7 @@ def main():
         print(f"Violation Summary:")
         print(f"  ID: {result.get('evidence_id', 'N/A')}")
         print(f"  RFID UID: {scanned_uid}")
+        print(f"  Previous Violations: {uid_info.get('previous_violations', 0)}")
         print(f"  Photo: {photo_path}")
         print(f"  Violation: {selected_violation}")
         print(f"  Location: Campus Parking Area")
