@@ -609,7 +609,7 @@ def main():
         # Check for previous violations
         uid_info = check_uid(scanned_uid)
         if uid_info['previous_violations'] > 0:
-            print(f"⚠️ Warning: This RFID has {uid_info['previous_violations']} previous violations")
+            print(f"WARNING: This RFID has {uid_info['previous_violations']} previous violations")
         
         # Step 2: Photo capture (Required field)
         print("Step 2: Taking evidence photo (Required)...")
@@ -657,7 +657,7 @@ def main():
         )
         
         if result["ok"]:
-            print(f"✅ Parking violation recorded successfully! ID: {result['evidence_id']}")
+            print(f"Parking violation recorded successfully! ID: {result['evidence_id']}")
             # Show success message
             elements_to_draw = [
                 ('text', (10, 10, "PARKING", font), {'fill': 'green'}),
@@ -668,7 +668,7 @@ def main():
                 ('text', (10, 90, "Complete!", font), {'fill': 'cyan'})
             ]
         else:
-            print(f"❌ Failed to record violation: {result['error']}")
+            print(f"Failed to record violation: {result['error']}")
             # Show error message
             elements_to_draw = [
                 ('text', (10, 30, "RECORDING", font), {'fill': 'red'}),
@@ -735,14 +735,14 @@ def main():
         
         print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
         print(f"Violation Summary:")
-        print(f"  🆔 Violation ID: {result.get('evidence_id', 'N/A')}")
-        print(f"  ✅ RFID UID: {scanned_uid}")
-        print(f"  ✅ Photo: {photo_path}")
-        print(f"  ✅ Violation: {selected_violation}")
-        print(f"  ✅ Location: Campus Parking Area")
-        print(f"  ✅ Device: HANDHELD_01")
-        print(f"  ✅ Database: {'Recorded' if result['ok'] else 'Failed'}")
-        print(f"  📊 Storage: {result.get('storage_method', 'unknown')}")
+        print(f"  ID: {result.get('evidence_id', 'N/A')}")
+        print(f"  RFID UID: {scanned_uid}")
+        print(f"  Photo: {photo_path}")
+        print(f"  Violation: {selected_violation}")
+        print(f"  Location: Campus Parking Area")
+        print(f"  Device: HANDHELD_01")
+        print(f"  Database: {'Recorded' if result['ok'] else 'Failed'}")
+        print(f"  Storage: {result.get('storage_method', 'unknown')}")
         
         time.sleep(5)
         
