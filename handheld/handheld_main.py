@@ -688,7 +688,7 @@ def main():
         if OLED_AVAILABLE:
             # Determine database type from storage method
             db_type = "MySQL" if result.get('storage_method', '').lower() == 'mysql' else "Local"
-            db_status = "✓ Saved" if result["ok"] else "✗ Failed"
+            db_status = "OK Saved" if result["ok"] else "X Failed"
             
             # Truncate UID for display (show first 8 characters)
             display_uid = scanned_uid[:8] if len(scanned_uid) > 8 else scanned_uid
