@@ -704,19 +704,24 @@ def main():
                 violation_line1 = violation_short
                 violation_line2 = ""
             
+            # Get violation ID for tracking
+            violation_id = result.get('evidence_id', 'N/A')
+            display_id = str(violation_id)[:8] if len(str(violation_id)) > 8 else str(violation_id)
+            
             summary_elements = [
                 ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
-                ('text', (5, 20, f"UID: {display_uid}", font), {'fill': 'cyan'}),
-                ('text', (5, 35, "Violation:", font), {'fill': 'white'}),
-                ('text', (5, 45, violation_line1, font), {'fill': 'yellow'}),
+                ('text', (5, 18, f"ID: {display_id}", font), {'fill': 'green'}),
+                ('text', (5, 30, f"UID: {display_uid}", font), {'fill': 'cyan'}),
+                ('text', (5, 42, "Violation:", font), {'fill': 'white'}),
+                ('text', (5, 52, violation_line1, font), {'fill': 'yellow'}),
             ]
             
             # Add second line of violation if needed
             if violation_line2:
-                summary_elements.append(('text', (5, 55, violation_line2, font), {'fill': 'yellow'}))
-                db_y_pos = 70
+                summary_elements.append(('text', (5, 62, violation_line2, font), {'fill': 'yellow'}))
+                db_y_pos = 77
             else:
-                db_y_pos = 60
+                db_y_pos = 67
             
             # Add database status
             summary_elements.extend([
@@ -730,6 +735,7 @@ def main():
         
         print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
         print(f"Violation Summary:")
+        print(f"  🆔 Violation ID: {result.get('evidence_id', 'N/A')}")
         print(f"  ✅ RFID UID: {scanned_uid}")
         print(f"  ✅ Photo: {photo_path}")
         print(f"  ✅ Violation: {selected_violation}")
