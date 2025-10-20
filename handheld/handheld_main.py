@@ -162,26 +162,7 @@ def run_rfid_scanner():
         except Exception:
             font = None
         
-        # Try to import GPIO for button handling during scanning
-        try:
-            import RPi.GPIO as GPIO
-            GPIO_AVAILABLE = True
-            
-            # Set up GPIO pins
-            CENTER_PIN = 17 # GPIO 17 (Pin 11)
-            
-            # Initialize GPIO
-            try:
-                GPIO.setmode(GPIO.BCM)
-                GPIO.setup([CENTER_PIN], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-                print("GPIO initialized for RFID scanner")
-            except Exception as gpio_error:
-                print(f"GPIO setup error: {gpio_error}")
-                GPIO_AVAILABLE = False
-            
-        except ImportError:
-            print("RPi.GPIO not available for manual override")
-            GPIO_AVAILABLE = False
+
         
         # Show RFID scanning screen
         def draw_rfid_screen():
@@ -189,8 +170,7 @@ def run_rfid_scanner():
                 ('text', (15, 15, "RFID SCANNER", font), {'fill': 'white'}),
                 ('text', (20, 35, "Place RFID tag", font), {'fill': 'cyan'}),
                 ('text', (20, 50, "near reader...", font), {'fill': 'cyan'}),
-                ('text', (10, 75, "Scanning...", font), {'fill': 'yellow'}),
-                ('text', (5, 95, "CENTER: Override", font), {'fill': 'green'})
+                ('text', (10, 75, "Scanning...", font), {'fill': 'yellow'})
             ]
             
             if OLED_AVAILABLE:
@@ -199,46 +179,12 @@ def run_rfid_scanner():
             else:
                 Draw_All_Elements(elements_to_draw)
         
-        # Show manual override screen
-        def draw_manual_override_screen():
-            elements_to_draw = [
-                ('text', (10, 15, "MANUAL OVERRIDE", font), {'fill': 'yellow'}),
-                ('text', (15, 35, "ACTIVATED", font), {'fill': 'yellow'}),
-                ('text', (10, 55, "Enter UID via", font), {'fill': 'white'}),
-                ('text', (15, 70, "Console", font), {'fill': 'white'}),
-                ('text', (10, 90, "Check Terminal", font), {'fill': 'cyan'})
-            ]
-            
-            if OLED_AVAILABLE:
-                Clear_Screen()
-                Draw_All_Elements(elements_to_draw)
-            else:
-                Draw_All_Elements(elements_to_draw)
+
         
         # Show the scanning screen
         draw_rfid_screen()
         
-        # Start scanning with manual override capability
-        if GPIO_AVAILABLE:
-            print("RFID Scanner active - Press CENTER button to skip RFID scanning")
-            
-            # Check for CENTER button press to skip RFID scanning
-            for i in range(50):  # Check for 5 seconds (50 * 0.1s)  
-                center_state = GPIO.input(CENTER_PIN)
-                
-                if center_state == GPIO.HIGH:
-                    print("CENTER button pressed - Skipping RFID scan!")
-                    draw_manual_override_screen()
-                    time.sleep(0.5)  # Debounce
-                    
-                    # Generate a skip UID and return it
-                    skip_uid = "SKIP_" + str(int(time.time()))
-                    print(f"Generated skip UID: {skip_uid}")
-                    return skip_uid
-                
-                time.sleep(0.1)  # Small delay
-        
-        print("No button press - attempting RFID scan")
+        print("RFID Scanner active - attempting RFID scan")
         
         # Try to use the actual RFID scanner
         try:
@@ -268,8 +214,8 @@ def run_rfid_scanner():
             ('text', (10, 15, "RFID SCAN", font), {'fill': 'white'}),
             ('text', (15, 30, "FAILED", font), {'fill': 'red'}),
             ('text', (10, 50, "No tag detected", font), {'fill': 'yellow'}),
-            ('text', (10, 65, "Try again or", font), {'fill': 'white'}),
-            ('text', (10, 80, "press CENTER", font), {'fill': 'green'})
+            ('text', (10, 65, "Please try", font), {'fill': 'white'}),
+            ('text', (10, 80, "again", font), {'fill': 'white'})
         ]
         
         if OLED_AVAILABLE:
