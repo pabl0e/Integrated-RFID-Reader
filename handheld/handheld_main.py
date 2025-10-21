@@ -715,7 +715,7 @@ def main():
                 ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
                 ('text', (5, 16, f"ID: {display_id}", font), {'fill': 'green'}),
                 ('text', (5, 26, f"UID: {display_uid}", font), {'fill': 'cyan'}),
-                ('text', (5, 36, f"Past: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
+                ('text', (5, 36, f"Past Violations: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
                 ('text', (5, 46, "Violation:", font), {'fill': 'white'}),
                 ('text', (5, 56, violation_line1, font), {'fill': 'yellow'}),
             ]
