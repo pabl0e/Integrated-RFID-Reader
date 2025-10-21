@@ -14,11 +14,17 @@ from PIL import ImageFont
 from handheld_rfid_module import scan_rfid_for_enforcement
 from handheld_db_module import store_evidence, check_uid
 
+# Add delay for SPI interface initialization on startup
+print("Initializing SPI interface for OLED...")
+time.sleep(10)  # Allow SPI interface to stabilize
+
 # Try to import OLED module
 try:
     from OLED import Clear_Screen, Draw_All_Elements, Display_Image
     OLED_AVAILABLE = True
     print("OLED module loaded successfully")
+    # Additional delay after OLED module load
+    time.sleep(1)
 except ImportError:
     OLED_AVAILABLE = False
     print("OLED module not available, using console output only")
