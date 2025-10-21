@@ -3,6 +3,7 @@ from tkinter import font as tkfont
 import sys
 from PIL import Image, ImageTk
 import io
+from PIL import Image, ImageTk, ImageDraw
 
 class CarInfoDisplay:
     def __init__(self):
@@ -212,8 +213,12 @@ class CarInfoDisplay:
         except KeyboardInterrupt:
             print("\nApplication terminated by user")
             sys.exit(0)
-
-# Allow running this file directly for layout testing
-if __name__ == "__main__":
-    ui = CarInfoDisplay()
-    ui.run()
+    def show_red_x(self, w=500, h=900, thickness=40):
+        """Draw a large red X and display it on the left panel."""
+        img = Image.new('RGB', (w, h), 'white')
+        d = ImageDraw.Draw(img)
+        # two diagonals
+        d.line((0, 0, w, h), fill=(255, 0, 0), width=thickness)
+        d.line((0, h, w, 0), fill=(255, 0, 0), width=thickness)
+        self._profile_photo = ImageTk.PhotoImage(img)
+        self.profile_image_label.config(image=self._profile_photo)
