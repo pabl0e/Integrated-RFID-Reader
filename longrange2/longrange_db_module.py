@@ -54,7 +54,7 @@ def check_uid(read_uid, display):
     cached_data = _get_cached(read_uid)
     if cached_data:
         # matched data already cached -> success=1 log (optional to avoid duplicates)
-        add_access_log(cached_data['data'].get('vehicle_id'), read_uid, 'entry', 'entrance', success=1)
+        add_access_log(cached_data['data'].get('vehicle_id'), read_uid, 'exit', 'exit', success=1)
         display.root.after(0, display.update_car_info, cached_data['data'], cached_data.get('photo'))
         return cached_data
 
@@ -63,7 +63,7 @@ def check_uid(read_uid, display):
         # Show N/A but still log a failed attempt
         empty_data = {k: 'N/A' for k in
                       ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
-        add_access_log(None, read_uid, 'entry', 'entrance', success=0)
+        add_access_log(None, read_uid, 'exit', 'exit', success=0)
         display.root.after(0, display.update_car_info, empty_data, None)
 
         # Show red X if no match
@@ -101,7 +101,7 @@ def check_uid(read_uid, display):
             red_x_bytes = load_image_as_bytes(RED_X_IMAGE_PATH)
             empty_data = {k: 'N/A' for k in
                           ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
-            add_access_log(None, read_uid, 'entry', 'entrance', success=0)
+            add_access_log(None, read_uid, 'exit', 'exit', success=0)
             display.root.after(0, display.update_car_info, empty_data, red_x_bytes)
             
             return {'data': empty_data, 'photo': red_x_bytes}
@@ -128,7 +128,7 @@ def check_uid(read_uid, display):
         _put_cached(read_uid, {'data': data, 'photo': photo})
 
         # success=1
-        add_access_log(vehicle_id, read_uid, 'entry', 'entrance', success=1)
+        add_access_log(vehicle_id, read_uid, 'exit', 'exit', success=1)
 
         # Update display with valid photo
         display.root.after(0, display.update_car_info, data, photo)
@@ -139,7 +139,7 @@ def check_uid(read_uid, display):
         error_data = {k: 'Error' for k in
                       ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
         # treat this as a failed attempt for logging purposes
-        add_access_log(None, read_uid, 'entry', 'entrance', success=0)
+        add_access_log(None, read_uid, 'exit', 'exit', success=0)
         display.root.after(0, display.update_car_info, error_data, None)
 
         # Show red X in case of error
