@@ -15,12 +15,12 @@ def create_tables():
             host='localhost',
             user='binslibal',
             password='Vinceleval423!',
-            database='local_db'
+            database='rfid_vehicle_system'  # Fixed to match handheld_db_module
         )
         
         cursor = conn.cursor()
         
-        print("Creating tables in local_db...")
+        print("Creating tables in rfid_vehicle_system...")
         
         # Create vehicle_evidence table
         vehicle_evidence_sql = """
