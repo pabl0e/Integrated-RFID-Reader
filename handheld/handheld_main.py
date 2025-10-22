@@ -12,7 +12,7 @@ import time
 import os
 from PIL import ImageFont
 from handheld_rfid_module import scan_rfid_for_enforcement
-from handheld_db_module import store_evidence, check_uid
+from handheld_db_module import store_evidence, check_uid, add_new_uid
 
 # Add delay for SPI interface initialization on startup
 print("Initializing SPI interface for OLED...")
@@ -72,13 +72,15 @@ def show_main_menu_with_camera():
             GPIO_AVAILABLE = True
             
             # Set up GPIO pins
+            UP_PIN = 4      # GPIO 4 (Pin 7)
+            DOWN_PIN = 27   # GPIO 27 (Pin 13)
             CENTER_PIN = 17 # GPIO 17 (Pin 11)
             BACK_PIN = 26   # GPIO 26 (Pin 37)
             
             # Initialize GPIO
             try:
                 GPIO.setmode(GPIO.BCM)
-                GPIO.setup([CENTER_PIN, BACK_PIN], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+                GPIO.setup([UP_PIN, DOWN_PIN, CENTER_PIN, BACK_PIN], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
                 print("GPIO buttons initialized for main menu")
             except Exception as gpio_error:
                 print(f"GPIO setup error: {gpio_error}")
@@ -108,8 +110,9 @@ def show_main_menu_with_camera():
                 ('text', (10, 25, "VIOLATIONS", font), {'fill': 'white'}),
                 ('text', (10, 40, "ENFORCEMENT", font), {'fill': 'white'}),
                 ('text', (10, 60, "CENTER: Start", font), {'fill': 'cyan'}),
-                ('text', (10, 75, "BACK: Exit", font), {'fill': 'blue'}),
-                ('text', (10, 95, "Ready to scan!", font), {'fill': 'white'})
+                ('text', (10, 75, "BACK: UID Reg", font), {'fill': 'blue'}),
+                ('text', (10, 88, "UP+DOWN: Exit", font), {'fill': 'red'}),
+                ('text', (10, 100, "Ready to scan!", font), {'fill': 'white'})
             ]
             
             if OLED_AVAILABLE:
@@ -122,31 +125,50 @@ def show_main_menu_with_camera():
         draw_main_menu()
         
         if GPIO_AVAILABLE:
-            print("Press CENTER button to start enforcement, BACK button to exit")
+            print("Press CENTER to start enforcement, BACK for UID registration, UP+DOWN to exit")
             
             while True:
                 # Read button states
                 center_state = GPIO.input(CENTER_PIN)
                 back_state = GPIO.input(BACK_PIN)
+                up_state = GPIO.input(UP_PIN)
+                down_state = GPIO.input(DOWN_PIN)
                 
-                if center_state == GPIO.HIGH:
+                # Check for exit combination (UP + DOWN)
+                if up_state == GPIO.HIGH and down_state == GPIO.HIGH:
+                    print("UP+DOWN buttons pressed - Exiting system")
+                    time.sleep(0.5)  # Debounce
+                    return picam2, False
+                
+                elif center_state == GPIO.HIGH:
                     print("CENTER button pressed - Starting enforcement!")
                     time.sleep(0.5)  # Debounce
                     return picam2, True
                 
                 elif back_state == GPIO.HIGH:
-                    print("BACK button pressed - Exiting system")
+                    print("BACK button pressed - Starting UID registration")
                     time.sleep(0.5)  # Debounce
-                    return picam2, False
+                    
+                    # Run UID registration
+                    run_uid_registration()
+                    
+                    # Redraw main menu after UID registration
+                    draw_main_menu()
+                    continue
                 
                 time.sleep(0.1)  # Small delay to prevent excessive CPU usage
         else:
             # Keyboard fallback for testing
-            print("Press Enter to start enforcement, 'q' to exit:")
+            print("Press Enter to start enforcement, 'u' for UID registration, 'q' to exit:")
             user_input = input().strip().lower()
             if user_input == 'q':
                 print("Exiting system")
                 return picam2, False
+            elif user_input == 'u':
+                print("Starting UID registration!")
+                run_uid_registration()
+                # Loop back to main menu
+                return show_main_menu_with_camera()
             else:
                 print("Starting enforcement!")
                 return picam2, True
@@ -560,6 +582,210 @@ def run_violation_selector():
     except Exception as e:
         print(f"Violation selector error: {e}")
         return None
+
+def run_uid_registration():
+    """Run UID registration process with OLED interface"""
+    print("=== UID REGISTRATION ===")
+    
+    try:
+        from PIL import ImageFont
+        
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+        
+        # Try to import GPIO for button handling
+        try:
+            import RPi.GPIO as GPIO
+            GPIO_AVAILABLE = True
+            
+            # Set up GPIO pins
+            CENTER_PIN = 17 # GPIO 17 (Pin 11) 
+            BACK_PIN = 26   # GPIO 26 (Pin 37)
+            
+            # Initialize GPIO only once
+            try:
+                try:
+                    GPIO.setmode(GPIO.BCM)
+                except:
+                    pass
+                    
+                GPIO.setup([CENTER_PIN, BACK_PIN], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+                print("GPIO buttons initialized for UID registration")
+                
+            except Exception as gpio_error:
+                print(f"GPIO setup error: {gpio_error}")
+                GPIO_AVAILABLE = False
+            
+        except ImportError:
+            print("RPi.GPIO not available, using keyboard input fallback")
+            GPIO_AVAILABLE = False
+        
+        # Show UID registration intro screen
+        def draw_uid_intro():
+            elements_to_draw = [
+                ('text', (10, 10, "UID", font), {'fill': 'white'}),
+                ('text', (10, 25, "REGISTRATION", font), {'fill': 'white'}),
+                ('text', (10, 40, "MODE", font), {'fill': 'white'}),
+                ('text', (10, 60, "CENTER: Scan UID", font), {'fill': 'cyan'}),
+                ('text', (10, 75, "BACK: Exit to Menu", font), {'fill': 'blue'}),
+                ('text', (10, 95, "Ready to register", font), {'fill': 'white'})
+            ]
+            
+            if OLED_AVAILABLE:
+                Clear_Screen()
+                Draw_All_Elements(elements_to_draw)
+            else:
+                Draw_All_Elements(elements_to_draw)
+        
+        # Show UID scanning screen
+        def draw_uid_scanning():
+            elements_to_draw = [
+                ('text', (15, 15, "UID SCANNER", font), {'fill': 'white'}),
+                ('text', (20, 35, "Place RFID tag", font), {'fill': 'cyan'}),
+                ('text', (20, 50, "near reader...", font), {'fill': 'cyan'}),
+                ('text', (10, 75, "Scanning...", font), {'fill': 'yellow'})
+            ]
+            
+            if OLED_AVAILABLE:
+                Clear_Screen()
+                Draw_All_Elements(elements_to_draw)
+            else:
+                Draw_All_Elements(elements_to_draw)
+        
+        # Show UID registration result
+        def draw_uid_result(uid, result):
+            if result['success'] and result['new_uid']:
+                # New UID registered successfully
+                elements_to_draw = [
+                    ('text', (10, 10, "NEW UID", font), {'fill': 'green'}),
+                    ('text', (10, 25, "REGISTERED!", font), {'fill': 'green'}),
+                    ('text', (5, 45, f"UID: {uid[:16]}", font), {'fill': 'white'}),
+                    ('text', (5, 60, f"{uid[16:] if len(uid) > 16 else ''}", font), {'fill': 'white'}),
+                    ('text', (10, 80, "Added to system", font), {'fill': 'cyan'})
+                ]
+            elif result['success'] and not result['new_uid']:
+                # UID already exists
+                elements_to_draw = [
+                    ('text', (10, 10, "UID ALREADY", font), {'fill': 'yellow'}),
+                    ('text', (10, 25, "EXISTS", font), {'fill': 'yellow'}),
+                    ('text', (5, 45, f"UID: {uid[:16]}", font), {'fill': 'white'}),
+                    ('text', (5, 60, f"{uid[16:] if len(uid) > 16 else ''}", font), {'fill': 'white'}),
+                    ('text', (10, 80, "Already in system", font), {'fill': 'orange'})
+                ]
+            else:
+                # Registration failed
+                elements_to_draw = [
+                    ('text', (10, 10, "REGISTRATION", font), {'fill': 'red'}),
+                    ('text', (10, 25, "FAILED", font), {'fill': 'red'}),
+                    ('text', (5, 45, f"UID: {uid[:16] if uid else 'N/A'}", font), {'fill': 'white'}),
+                    ('text', (5, 60, f"{uid[16:] if uid and len(uid) > 16 else ''}", font), {'fill': 'white'}),
+                    ('text', (10, 80, "Database error", font), {'fill': 'red'})
+                ]
+            
+            if OLED_AVAILABLE:
+                Clear_Screen()
+                Draw_All_Elements(elements_to_draw)
+            else:
+                Draw_All_Elements(elements_to_draw)
+        
+        # Main UID registration loop
+        while True:
+            # Show intro screen
+            draw_uid_intro()
+            
+            if GPIO_AVAILABLE:
+                print("Press CENTER to scan UID, BACK to exit to main menu")
+                
+                waiting_for_input = True
+                while waiting_for_input:
+                    center_state = GPIO.input(CENTER_PIN)
+                    back_state = GPIO.input(BACK_PIN)
+                    
+                    if center_state == GPIO.HIGH:
+                        print("CENTER button pressed - Starting UID scan")
+                        time.sleep(0.5)  # Debounce
+                        waiting_for_input = False
+                        break
+                    
+                    elif back_state == GPIO.HIGH:
+                        print("BACK button pressed - Exiting UID registration")
+                        time.sleep(0.5)  # Debounce
+                        return False  # Exit to main menu
+                    
+                    time.sleep(0.1)
+            else:
+                # Keyboard fallback
+                print("Press Enter to scan UID, 'q' to exit to main menu:")
+                user_input = input().strip().lower()
+                if user_input == 'q':
+                    print("Exiting UID registration")
+                    return False  # Exit to main menu
+            
+            # Show scanning screen
+            draw_uid_scanning()
+            
+            print("UID Scanner active - attempting RFID scan")
+            
+            # Try to use the actual RFID scanner
+            try:
+                scanned_uid = scan_rfid_for_enforcement()
+                if scanned_uid:
+                    print(f"Scanned UID: {scanned_uid}")
+                    
+                    # Register the UID in the database
+                    result = add_new_uid(scanned_uid)
+                    print(f"Registration result: {result['message']}")
+                    
+                    # Show result on OLED
+                    draw_uid_result(scanned_uid, result)
+                    time.sleep(4)  # Show result for 4 seconds
+                    
+                    # Continue with more scans
+                    continue
+                else:
+                    # Show scan failed screen
+                    failed_elements = [
+                        ('text', (10, 15, "UID SCAN", font), {'fill': 'white'}),
+                        ('text', (15, 30, "FAILED", font), {'fill': 'red'}),
+                        ('text', (10, 50, "No tag detected", font), {'fill': 'yellow'}),
+                        ('text', (10, 65, "Try again", font), {'fill': 'white'})
+                    ]
+                    
+                    if OLED_AVAILABLE:
+                        Clear_Screen()
+                        Draw_All_Elements(failed_elements)
+                    else:
+                        Draw_All_Elements(failed_elements)
+                    
+                    print("UID scan failed. Returning to menu.")
+                    time.sleep(3)
+                    continue
+                    
+            except Exception as e:
+                print(f"UID scanner error: {e}")
+                
+                # Show error screen
+                error_elements = [
+                    ('text', (10, 15, "SCANNER", font), {'fill': 'white'}),
+                    ('text', (15, 30, "ERROR", font), {'fill': 'red'}),
+                    ('text', (10, 50, "Hardware issue", font), {'fill': 'yellow'}),
+                    ('text', (10, 75, "Check connection", font), {'fill': 'white'})
+                ]
+                
+                if OLED_AVAILABLE:
+                    Clear_Screen()
+                    Draw_All_Elements(error_elements)
+                else:
+                    Draw_All_Elements(error_elements)
+                
+                time.sleep(3)
+                continue
+                
+    except Exception as e:
+        print(f"UID registration error: {e}")
+        return False
 
 def main():
     """Main enforcement workflow - Records to violations table"""
