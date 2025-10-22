@@ -259,3 +259,57 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
             main_conn.close()
         except Exception:
             pass
+
+def add_new_uid(read_uid: str) -> dict:
+    """
+    Insert a tag into rfid_tags table exactly once.
+    Returns dict with status info: {'success': bool, 'message': str, 'new_uid': bool}
+    """
+    # Try local database first
+    conn = connect_localdb()
+    if not conn:
+        # Try main database as fallback
+        conn = connect_maindb()
+        if not conn:
+            return {
+                'success': False,
+                'message': 'Failed to connect to both local and main database',
+                'new_uid': False
+            }
+    
+    try:
+        cursor = conn.cursor()
+        query = """
+            INSERT IGNORE INTO rfid_tags (tag_uid, status, issued_date)
+            VALUES (%s, 'active', CURDATE())
+        """
+        cursor.execute(query, (read_uid,))
+        conn.commit()
+        
+        if cursor.rowcount == 1:
+            # New UID added successfully
+            return {
+                'success': True,
+                'message': f'New UID {read_uid} registered successfully',
+                'new_uid': True
+            }
+        else:
+            # UID already exists
+            return {
+                'success': True,
+                'message': f'UID {read_uid} already exists in database',
+                'new_uid': False
+            }
+            
+    except Error as e:
+        return {
+            'success': False,
+            'message': f'Database error: {e}',
+            'new_uid': False
+        }
+    finally:
+        try:
+            cursor.close()
+        except Exception:
+            pass
+        conn.close()
