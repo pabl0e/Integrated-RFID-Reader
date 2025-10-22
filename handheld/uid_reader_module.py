@@ -1,11 +1,11 @@
-from handheld_db_module import connect_db
+from handheld_db_module import add_new_uid
 import serial
 import os
 import sys
 import time
 from subprocess import Popen 
 import time
-from mysql.connector import Error  
+
 
 '''Python Scripts for the UID Reader Module'''
 
@@ -85,8 +85,31 @@ def run_rfid_read():
                                 actual_epc = tag_id[4:-4]
                                 crc16 = tag_id[-4:]
                                 print(f"Detected EPC: {actual_epc}")
-                                add_new_uid(actual_epc)
-                                print(f"Added new UID to the Database")
+                                try:
+                                    result = add_new_uid(actual_epc)
+                                except Exception as e:
+                                    print(f"Exception while registering UID: {e}")
+                                    result = {'success': False, 'message': str(e), 'new_uid': False}
+
+                                # Print detailed result so we can diagnose DB errors on the Pi
+                                if isinstance(result, dict):
+                                    if result.get('success'):
+                                        if result.get('new_uid'):
+                                            print(f"New UID registered: {actual_epc}")
+                                        else:
+                                            print(f"UID already exists in DB: {actual_epc}")
+                                    else:
+                                        print(f"Failed to register UID: {result.get('message')}")
+                                        # Optional fallback: write UID to a local file for later processing
+                                        try:
+                                            os.makedirs('pending_uids', exist_ok=True)
+                                            with open(os.path.join('pending_uids', f"{actual_epc}.txt"), 'w') as f:
+                                                f.write(result.get('message') or 'db_failure')
+                                            print('Saved UID to pending_uids for later sync')
+                                        except Exception as file_err:
+                                            print(f'Could not write fallback UID file: {file_err}')
+                                else:
+                                    print(f"add_new_uid returned unexpected value: {result}")
 
                         except UnicodeDecodeError:
                             print("Error decoding EPC data. It might not be ASCII hex characters as expected.")
@@ -115,35 +138,7 @@ def run_rfid_read():
             print(f"An unexpected error occurred: {e}")
             sys.exit(1)
 
-""" add_new_uid(): function is for reading and adding a new/unique UID (column) to the rfid_tags table of the Database"""
-
-def add_new_uid(read_uid: str) -> bool:
-    """
-    Insert a tag into rfid_tags exactly once.
-    Returns True if a new row was inserted, False if it already existed or on error.
-    """
-    conn = connect_db()
-    if not conn:
-        return False
-    try:
-        cursor = conn.cursor()
-        query = """
-            INSERT IGNORE INTO rfid_tags (tag_uid)
-            VALUES (%s)
-        """
-        # IMPORTANT: one-element tuple
-        cursor.execute(query, (read_uid,))
-        conn.commit()
-        return cursor.rowcount == 1  # 1 if newly inserted, 0 if ignored (duplicate)
-    except Error as e:
-        print(f"Error inserting new UID: {e}")
-        return False
-    finally:
-        try:
-            cursor.close()
-        except Exception:
-            pass
-        conn.close()
+# UID insertion is handled by handheld_db_module.add_new_uid
 
 if __name__ == "__main__":
     main()
