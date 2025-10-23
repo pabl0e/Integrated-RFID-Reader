@@ -57,19 +57,19 @@ def run_rfid_read():
         try:
             ser.flushInput()
 
-            print(f"\nSending Multi-TAG read EPC command (U): {COMMAND_MULTI_TAG_EPC.hex()}")
-            ser.write(COMMAND_MULTI_TAG_EPC)
+            print(f"\nSending Single-Tag read EPC command (U): {COMMAND_SINGLE_TAG_EPC.hex()}")
+            ser.write(COMMAND_SINGLE_TAG_EPC)
             time.sleep(0.1)
 
             response_data = ser.read(ser.inWaiting())
 
             if response_data:
                 raw_response = response_data.hex()
-                print(f"Received raw response:v", raw_response)
+                print(f"Received raw response: ", raw_response)
 
                 if len(response_data) >= 4 and \
                    response_data[0] == 0x0A and \
-                   response_data[1] == ord('U') and \
+                   response_data[1] == ord('Q') and \
                    response_data[-2:] == b'\x0D\x0A':
 
                     epc_data_bytes = response_data[2:-2]
