@@ -127,15 +127,28 @@ def add_new_uid(read_uid: str) -> bool:
         return False
     try:
         cursor = conn.cursor()
+        # Insert only if the tag_uid does NOT already exist.
+        # This avoids an INSERT attempt on duplicates, so AUTO_INCREMENT is not advanced.
         query = """
-            INSERT IGNORE INTO rfid_tags (tag_uid)
-            VALUES (%s)
+            INSERT INTO rfid_tags (tag_uid)
+            SELECT %s
+            FROM DUAL
+            WHERE NOT EXISTS (
+                SELECT 1 FROM rfid_tags WHERE tag_uid = %s
+            )
         """
-        # IMPORTANT: one-element tuple
-        cursor.execute(query, (read_uid,))
+        cursor.execute(query, (read_uid, read_uid))
         conn.commit()
-        return cursor.rowcount == 1  # 1 if newly inserted, 0 if ignored (duplicate)
+        return cursor.rowcount == 1  # 1 if inserted, 0 if already existed
     except Error as e:
+        # In practice, this should rarely trigger since we guard with NOT EXISTS.
+        # If a race condition happens and another process inserts first, this may
+        # raise a duplicate-key error; treat as "already existed".
+        try:
+            if getattr(e, "errno", None) == 1062:  # ER_DUP_ENTRY
+                return False
+        except Exception:
+            pass
         print(f"Error inserting new UID: {e}")
         return False
     finally:
