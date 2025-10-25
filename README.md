@@ -157,7 +157,7 @@ pip3 install mysql-connector-python pillow picamera2 RPi.GPIO
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/Integrated-RFID-Reader.git
+git clone https://github.com/pabl0e/Integrated-RFID-Reader.git
 cd Integrated-RFID-Reader
 
 # Setup database (for each device)
