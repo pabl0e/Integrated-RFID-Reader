@@ -1,6 +1,6 @@
 # Integrated RFID Reader System
 
-A comprehensive **RFID-based vehicle tracking and parking enforcement system** designed for educational institutions and parking facilities. The system provides real-time vehicle registration verification and parking violation enforcement using multiple deployment configurations.
+A comprehensive **RFID-based vehicle tracking and parking enforcement system** designed for educational institutions and parking facilities. The system provides real-time vehicle registration verification and parking violation enforcement using multiple deployment configurations. This project was made in compliance for our university capstone project.
 
 ![System Overview](https://img.shields.io/badge/Platform-Raspberry%20Pi-red) ![Language](https://img.shields.io/badge/Language-Python-blue) ![Database](https://img.shields.io/badge/Database-MySQL%2FMariaDB-orange) ![License](https://img.shields.io/badge/License-MIT-green)
 
