@@ -1,4 +1,4 @@
-from longrange_db_module import connect_db
+from longrange_db_module import get_db_connection  # <-- FIXED: Renamed connect_db
 import serial
 import os
 import sys
@@ -57,7 +57,7 @@ def run_rfid_read():
         try:
             ser.flushInput()
 
-            print(f"\nSending Single-Tag read EPC command (U): {COMMAND_SINGLE_TAG_EPC.hex()}")
+            print(f"\nSending Single-TAG read EPC command (Q): {COMMAND_SINGLE_TAG_EPC.hex()}")
             ser.write(COMMAND_SINGLE_TAG_EPC)
             time.sleep(0.1)
 
@@ -78,22 +78,25 @@ def run_rfid_read():
                         try:
                             tag_id = epc_data_bytes.decode('ascii').strip()
 
-                            if raw_response == "0a550d0a":
+                            if raw_response == "0a510d0a": # Corrected no-tag response for 'Q'
                                 print("No tag detected in RF field.")
                             else:
                                 pc = tag_id[0:4]
                                 actual_epc = tag_id[4:-4]
                                 crc16 = tag_id[-4:]
                                 print(f"Detected EPC: {actual_epc}")
-                                add_new_uid(actual_epc)
-                                print(f"Added new UID to the Database")
+                                if add_new_uid(actual_epc):
+                                    print(f"Added new UID to the Database: {actual_epc}")
+                                else:
+                                    print(f"UID already exists in Database: {actual_epc}")
+
 
                         except UnicodeDecodeError:
                             print("Error decoding EPC data. It might not be ASCII hex characters as expected.")
                     else:
-                        print("Received 'U' response with no data (likely 'none' for no tag).")
+                        print("Received 'Q' response with no data (likely 'none' for no tag).")
                 else:
-                    print("Received unexpected response format for 'U' command.")
+                    print("Received unexpected response format for 'Q' command.")
             else:
                 print("No response received from reader within timeout.")
 
@@ -122,13 +125,14 @@ def add_new_uid(read_uid: str) -> bool:
     Insert a tag into rfid_tags exactly once.
     Returns True if a new row was inserted, False if it already existed or on error.
     """
-    conn = connect_db()
+    conn = get_db_connection() # <-- FIXED: Renamed connect_db
     if not conn:
         return False
+        
+    cursor = None # Define cursor outside try
     try:
         cursor = conn.cursor()
         # Insert only if the tag_uid does NOT already exist.
-        # This avoids an INSERT attempt on duplicates, so AUTO_INCREMENT is not advanced.
         query = """
             INSERT INTO rfid_tags (tag_uid)
             SELECT %s
@@ -141,9 +145,6 @@ def add_new_uid(read_uid: str) -> bool:
         conn.commit()
         return cursor.rowcount == 1  # 1 if inserted, 0 if already existed
     except Error as e:
-        # In practice, this should rarely trigger since we guard with NOT EXISTS.
-        # If a race condition happens and another process inserts first, this may
-        # raise a duplicate-key error; treat as "already existed".
         try:
             if getattr(e, "errno", None) == 1062:  # ER_DUP_ENTRY
                 return False
@@ -152,11 +153,13 @@ def add_new_uid(read_uid: str) -> bool:
         print(f"Error inserting new UID: {e}")
         return False
     finally:
-        try:
-            cursor.close()
-        except Exception:
-            pass
-        conn.close()
+        if cursor:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn:
+            conn.close() # Returns connection to the pool
 
 if __name__ == "__main__":
     main()

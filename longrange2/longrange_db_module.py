@@ -1,15 +1,49 @@
 import mysql.connector
+from mysql.connector import pooling # <-- IMPORT POOLING
 import time
 from mysql.connector import Error  
 from display_gui import CarInfoDisplay
 from PIL import Image, ImageTk
 import io
 
+# --- Create the pool ONCE when the module is imported ---
+try:
+    db_pool = mysql.connector.pooling.MySQLConnectionPool(
+        pool_name="rfid_pool",
+        pool_size=3,  # Start with 3, can increase to 5 if needed
+        #host='192.168.50.238',
+        host='192.168.50.215',
+        user='jicmugot16',
+        password='melonbruh123',
+        database='rfid_vehicle_system',
+        autocommit=True
+    )
+    print("Database connection pool created successfully.")
+except Error as e:
+    print(f"Error creating connection pool: {e}")
+    db_pool = None
+
 # Cache settings
 TAG_CACHE_TTL = 300.0  # seconds (UID TTL cache time)
 _tag_cache = {}        # {uid: (timestamp, {'data':..., 'photo':...})}
 
 RED_X_IMAGE_PATH = "/home/binslibal/longrange2/Red_X.jpg"
+
+def load_image_as_bytes(image_path):
+    """Loads an image from path and returns its byte content."""
+    try:
+        img = Image.open(image_path)
+        byte_io = io.BytesIO()
+        img.save(byte_io, format='PNG') # Save as PNG for consistency
+        byte_io.seek(0)
+        return byte_io.read()
+    except Exception as e:
+        print(f"Failed to load image {image_path}: {e}")
+        return None
+
+# --- Pre-load the Red X image bytes ONCE ---
+_RED_X_BYTES = load_image_as_bytes(RED_X_IMAGE_PATH)
+
 
 def _get_cached(uid):
     """Retrieve cached UID data if it's still valid."""
@@ -25,52 +59,47 @@ def _put_cached(uid, payload):
     if len(_tag_cache) > 200:
         _tag_cache.pop(next(iter(_tag_cache)))
 
-def connect_db():
-    """Set up the MySQL connection with connection pooling."""
+def get_db_connection():
+    """
+    REVISED function to get a connection from the POOL.
+    Replaces the old connect_db().
+    """
+    if not db_pool:
+        print("Database pool is not available.")
+        return None
     try:
-        conn = mysql.connector.connect(
-            #host='192.168.50.216',  # Replace with your DB host IP or hostname
-            host='192.168.50.238',
-            user='jicmugot16',
-            password='melonbruh123',
-            database='rfid_vehicle_system',
-            autocommit=True  # Enable auto commit to avoid unnecessary round trips
-        )
+        # Get a connection from the pool
+        conn = db_pool.get_connection()
         return conn
     except Error as e:
-        print("Database connection error:", e)
+        print(f"Error getting connection from pool: {e}")
         return None
-
-def load_image_as_bytes(image_path):
-    img = Image.open(image_path)
-    byte_io = io.BytesIO()
-    img.save(byte_io, format='PNG')
-    byte_io.seek(0)
-    return byte_io.read()
 
 def check_uid(read_uid, display):
 
     # Check the cache first
     cached_data = _get_cached(read_uid)
     if cached_data:
-        # matched data already cached -> success=1 log (optional to avoid duplicates)
-        add_access_log(cached_data['data'].get('vehicle_id'), read_uid, 'exit', 'exit', success=1)
+        # print("Cache HIT") # Uncomment for debugging
+        # Don't log every cache hit, too noisy
+        # add_access_log(cached_data['data'].get('vehicle_id'), read_uid, 'exit', 'exit', success=1)
         display.root.after(0, display.update_car_info, cached_data['data'], cached_data.get('photo'))
         return cached_data
+    
+    # print("Cache MISS") # Uncomment for debugging
 
-    conn = connect_db()
+    # --- Use the POOL to get a connection ---
+    conn = get_db_connection()
+    cursor = None # Define cursor outside try block
+    
+    empty_data = {k: 'N/A' for k in
+                  ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
+
     if not conn:
         # Show N/A but still log a failed attempt
-        empty_data = {k: 'N/A' for k in
-                      ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
-        add_access_log(None, read_uid, 'exit', 'exit', success=0)
-        display.root.after(0, display.update_car_info, empty_data, None)
-
-        # Show red X if no match
-        red_x_bytes = load_image_as_bytes(RED_X_IMAGE_PATH)
-        display.root.after(0, display.update_car_info, empty_data, red_x_bytes)
-        
-        return {'data': empty_data, 'photo': None}
+        add_access_log(None, read_uid, 'exit', 'exit', success=0) # This will get its own connection
+        display.root.after(0, display.update_car_info, empty_data, _RED_X_BYTES)
+        return {'data': empty_data, 'photo': _RED_X_BYTES}
 
     try:
         cursor = conn.cursor()
@@ -98,13 +127,10 @@ def check_uid(read_uid, display):
 
         if not result:
             # --- NO MATCH: show red X + log failure (success=0)
-            red_x_bytes = load_image_as_bytes(RED_X_IMAGE_PATH)
-            empty_data = {k: 'N/A' for k in
-                          ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
             add_access_log(None, read_uid, 'exit', 'exit', success=0)
-            display.root.after(0, display.update_car_info, empty_data, red_x_bytes)
+            display.root.after(0, display.update_car_info, empty_data, _RED_X_BYTES)
             
-            return {'data': empty_data, 'photo': red_x_bytes}
+            return {'data': empty_data, 'photo': _RED_X_BYTES}
 
         # --- MATCH FOUND
         (status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type,
@@ -122,15 +148,15 @@ def check_uid(read_uid, display):
             'license_plate': plate_number
         }
 
-        # If profile picture exists, use it; otherwise, None.
         photo = bytes(blob) if blob else None
-
+        
+        # Store in cache
         _put_cached(read_uid, {'data': data, 'photo': photo})
 
         # success=1
         add_access_log(vehicle_id, read_uid, 'exit', 'exit', success=1)
 
-        # Update display with valid photo
+        # Update display
         display.root.after(0, display.update_car_info, data, photo)
         return {'data': data, 'photo': photo}
 
@@ -138,26 +164,26 @@ def check_uid(read_uid, display):
         print("Error during UID check:", e)
         error_data = {k: 'Error' for k in
                       ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
-        # treat this as a failed attempt for logging purposes
+        
         add_access_log(None, read_uid, 'exit', 'exit', success=0)
-        display.root.after(0, display.update_car_info, error_data, None)
-
-        # Show red X in case of error
-        red_x_bytes = load_image_as_bytes(RED_X_IMAGE_PATH)
-        display.root.after(0, display.update_car_info, error_data, red_x_bytes)
-
-        return {'data': error_data, 'photo': None}
+        display.root.after(0, display.update_car_info, error_data, _RED_X_BYTES)
+        return {'data': error_data, 'photo': _RED_X_BYTES}
+    
     finally:
-        try:
+        # --- CRITICAL CHANGE ---
+        # This returns the connection to the pool, it doesn't close it
+        if cursor:
             cursor.close()
-        except Exception as e:
-            print(f"Error closing cursor: {e}")
-        conn.close()
+        if conn:
+            conn.close() 
+
 
 def add_access_log(vehicle_id, tag_uid, entry_type, location, success):
-    """Add an access log entry when an RFID tag is scanned."""
-    conn = connect_db()
+    """Add an access log entry. (Now uses the pool)"""
+    conn = get_db_connection()
+    cursor = None # Define cursor outside try block
     if not conn:
+        print("Error: Could not get DB connection to add access log.")
         return
     try:
         cursor = conn.cursor()
@@ -167,11 +193,14 @@ def add_access_log(vehicle_id, tag_uid, entry_type, location, success):
             VALUES (%s, %s, %s, %s, %s)
         """
         cursor.execute(query, (vehicle_id, tag_uid, entry_type, location, success))
-        conn.commit()
+        # conn.commit() # Not needed if autocommit=True in pool
         print("Access log added.")
     except Error as e:
         print(f"Error inserting access log: {e}")
     finally:
-        cursor.close()
-        conn.close()
-
+        # --- CRITICAL CHANGE ---
+        # Return connection to the pool
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
