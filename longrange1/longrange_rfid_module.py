@@ -48,9 +48,12 @@ def set_reader_power(ser):
 def run_rfid_read(display):
     GPIO = import_gpio()
     last_read = None
-    last_data = None
     last_payload = None
+    last_gui_update_time = 0
     
+    # Command 'U' (Inventory) gets the data faster and usually includes PC bits
+    COMMAND_MULTI_TAG_EPC = b'\x0A' + b'U' + b'\x0D'
+
     try:
         ser = serial.Serial(
             port='/dev/serial0',
@@ -61,103 +64,113 @@ def run_rfid_read(display):
             timeout=1
         )
         print(f"Successfully opened serial port {ser.port} at {ser.baudrate} baud.")
-
-        # --- SET READER POWER ON STARTUP ---
         set_reader_power(ser)
-        # -----------------------------------
 
     except serial.SerialException as e:
         print(f"Error opening serial port: {e}")
-        print("Please ensure the RFID reader is connected, the port name is correct, and user permissions are set.")
         sys.exit(1)
 
     print("Waiting for RFID tag...")
 
-    COMMAND_SINGLE_TAG_EPC = b'\x0A' + b'Q' + b'\x0D'
+    # Initialize buffer
+    data_buffer = b""
 
     while True:
         try:
             ser.flushInput()
+            ser.write(COMMAND_MULTI_TAG_EPC)
 
-            # Using Single-Tag read, as per your original script
-            ser.write(COMMAND_SINGLE_TAG_EPC)
-            time.sleep(0.1)
+            # --- CRITICAL FIX: COLLECTION LOOP ---
+            # Wait for the reader to finish sending the FULL long tag.
+            # We wait until we see the End Byte (0x0D) or timeout after 0.2s.
+            collection_start = time.time()
+            while (time.time() - collection_start) < 0.2:
+                if ser.inWaiting() > 0:
+                    data_buffer += ser.read(ser.inWaiting())
+                    if b'\x0D' in data_buffer:
+                        break # We found the end of the message!
+                time.sleep(0.005)
+            # -------------------------------------
 
-            response_data = ser.read(ser.inWaiting())
+            # --- PROCESSING LOOP ---
+            while b'\x0A' in data_buffer and b'\x0D' in data_buffer:
+                try:
+                    start_idx = data_buffer.index(b'\x0A')
+                    end_idx = data_buffer.index(b'\x0D', start_idx)
+                    
+                    packet_end = end_idx + 1
+                    if len(data_buffer) > packet_end and data_buffer[packet_end] == 0x0A:
+                        packet_end += 1
 
-            if response_data:
-                raw_response = response_data.hex()
-                # print(f"Received raw response: {raw_response}") # Uncomment for deep debugging
-
-                if len(response_data) >= 4 and \
-                   response_data[0] == 0x0A and \
-                   response_data[1] == ord('Q') and \
-                   response_data[-2:] == b'\x0D\x0A':
-
-                    epc_data_bytes = response_data[2:-2]
-
-                    if epc_data_bytes:
+                    packet = data_buffer[start_idx : packet_end]
+                    data_buffer = data_buffer[packet_end:] 
+                    
+                    if len(packet) > 6:
+                        raw_payload = packet[2:].strip()
+                        
                         try:
-                            tag_id = epc_data_bytes.decode('ascii').strip()
+                            tag_full_string = raw_payload.decode('ascii')
+                            
+                            # --- ROBUST UID EXTRACTION ---
+                            # Target UID length is 24 chars (Standard Gen2)
+                            target_len = 24
+                            actual_epc = ""
 
-                            if raw_response == "0a510d0a": # 'Q' command with no tag
-                                # print("No tag detected in RF field.") # Too noisy, comment out
-                                if last_payload:
-                                    # This will re-display the last valid read
-                                    display.root.after(0, display.update_car_info, last_payload['data'], last_payload.get('photo'))
-                            else:
-                                pc = tag_id[0:4]
-                                actual_epc = tag_id[4:-4]
-                                crc16 = tag_id[-4:]
-                                # print(f"Detected EPC: {actual_epc}") # Too noisy
+                            # Strategy 1: Smart Search for 'E2' (Standard Gen2 Start)
+                            # This handles "000E2..." or "3000E2..." or just "E2..."
+                            if "E2" in tag_full_string:
+                                e2_index = tag_full_string.find("E2")
+                                # Check if we have enough characters after E2 to make a full UID
+                                if e2_index + target_len <= len(tag_full_string):
+                                    actual_epc = tag_full_string[e2_index : e2_index + target_len]
+                            
+                            # Strategy 2: Fallback (If no E2 found, but length looks like Header + UID)
+                            elif len(tag_full_string) >= 24:
+                                # If it starts with '3000' (common header), strip it
+                                if tag_full_string.startswith("3000") and len(tag_full_string) >= 28:
+                                    actual_epc = tag_full_string[4:28]
+                                # If it starts with '000' (glitchy header), strip it
+                                elif tag_full_string.startswith("000") and len(tag_full_string) >= 27:
+                                    actual_epc = tag_full_string[3:27]
+                                else:
+                                    # Desperate fallback: Take the first 24 chars
+                                    actual_epc = tag_full_string[:24]
 
-                                if actual_epc != last_read: 
-                                    print(f"NEW Tag Detected: {actual_epc}") # Log only new tags
+                            # -----------------------------
+                            
+                            # Final Verification: Only process if we got exactly 24 chars
+                            if len(actual_epc) == 24:
+                                if actual_epc != last_read:
+                                    print(f"NEW Tag Streamed: {actual_epc}")
                                     last_read = actual_epc
-                                    # --- THIS IS THE SLOW PART WE ARE FIXING ---
+                                    
                                     payload = check_uid(actual_epc, display)
-                                    # -------------------------------------------
+                                    
                                     if isinstance(payload, dict) and 'data' in payload:
                                         last_payload = payload
                                     else:
                                         last_payload = {'data': payload, 'photo': None}
-                                    last_data = last_payload['data']
                                     
+                                    last_gui_update_time = time.time()
+
                                 else:
-                                    # print("Skipping duplicate") # Too noisy
-                                    if last_payload:
-                                        # Re-display last valid read if tag is held in field
+                                    current_time = time.time()
+                                    if last_payload and (current_time - last_gui_update_time > 2.0):
                                         display.root.after(0, display.update_car_info, last_payload['data'], last_payload.get('photo'))
+                                        last_gui_update_time = current_time
 
                         except UnicodeDecodeError:
-                            print("Error decoding EPC data.")
-                    else:
-                        # print("Received 'Q' response with no data.")
-                        if last_payload:
-                            display.root.after(0, display.update_car_info, last_payload['data'], last_payload.get('photo'))
-                else:
-                    print(f"Received unexpected response format: {raw_response}")
-            else:
-                # print("No response received from reader.") # Too noisy
-                pass
-
-            time.sleep(1.0) # Slightly slower loop to reduce serial/db load
+                            pass 
+                except ValueError:
+                    break
+            time.sleep(0.02) 
 
         except serial.SerialException as e:
-            print(f"Serial communication error: {e}")
-            print("Attempting to close and re-open serial port...")
+            print(f"Serial Error: {e}")
             ser.close()
-            time.sleep(5)
-            try:
-                ser.open()
-                print("Serial port reopened successfully.")
-                # Re-set power after re-opening
-                set_reader_power(ser)
-            except serial.SerialException as e_reopen:
-                print(f"Failed to reopen serial port: {e_reopen}")
-                sys.exit(1)
-
+            time.sleep(2)
+            try: ser.open(); set_reader_power(ser); 
+            except: pass
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            sys.exit(1)
-
+            print(f"Loop Error: {e}")
+            time.sleep(1)

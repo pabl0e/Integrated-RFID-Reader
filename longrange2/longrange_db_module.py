@@ -27,7 +27,7 @@ except Error as e:
 TAG_CACHE_TTL = 300.0  # seconds (UID TTL cache time)
 _tag_cache = {}        # {uid: (timestamp, {'data':..., 'photo':...})}
 
-RED_X_IMAGE_PATH = "/home/binslibal/longrange2/Red_X.jpg"
+RED_X_IMAGE_PATH = "/home/jicmugot16/longrange2/Red_X.jpg"
 
 def load_image_as_bytes(image_path):
     """Loads an image from path and returns its byte content."""
