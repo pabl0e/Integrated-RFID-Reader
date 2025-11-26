@@ -3,7 +3,7 @@ from mysql.connector import pooling # <-- IMPORT POOLING
 import time
 from mysql.connector import Error  
 from display_gui import CarInfoDisplay
-from PIL import Image, ImageTk
+from PIL import Image
 import io
 
 # --- Create the pool ONCE when the module is imported ---
@@ -12,7 +12,7 @@ try:
         pool_name="rfid_pool",
         pool_size=3,  # Start with 3, can increase to 5 if needed
         #host='192.168.50.238',
-        host='192.168.50.215',
+        host='192.168.1.11',
         user='jicmugot16',
         password='melonbruh123',
         database='rfid_vehicle_system',
@@ -27,22 +27,28 @@ except Error as e:
 TAG_CACHE_TTL = 300.0  # seconds (UID TTL cache time)
 _tag_cache = {}        # {uid: (timestamp, {'data':..., 'photo':...})}
 
-RED_X_IMAGE_PATH = "/home/binslibal/longrange2/Red_X.jpg"
+RED_X_IMAGE_PATH = "/home/jicmugot16/longrange1/Red_X.jpg"
 
-def load_image_as_bytes(image_path):
-    """Loads an image from path and returns its byte content."""
+def process_image_data(image_data):
+    """Takes raw bytes, opens, and resizes them to 500x900."""
     try:
-        img = Image.open(image_path)
-        byte_io = io.BytesIO()
-        img.save(byte_io, format='PNG') # Save as PNG for consistency
-        byte_io.seek(0)
-        return byte_io.read()
+        stream = io.BytesIO(image_data)
+        img = Image.open(stream).convert('RGB')
+        # Resize here in the background thread!
+        img.thumbnail((500, 900), Image.LANCZOS)
+        return img
     except Exception as e:
-        print(f"Failed to load image {image_path}: {e}")
+        print(f"Error processing image: {e}")
         return None
 
 # --- Pre-load the Red X image bytes ONCE ---
-_RED_X_BYTES = load_image_as_bytes(RED_X_IMAGE_PATH)
+try:
+    with open(RED_X_IMAGE_PATH, "rb") as f:
+        _raw_x_data = f.read()
+    _RED_X_IMG = process_image_data(_raw_x_data)
+except Exception as e:
+    print(f"Could not load Red X: {e}")
+    _RED_X_IMG = None
 
 
 def _get_cached(uid):
@@ -82,7 +88,7 @@ def check_uid(read_uid, display):
     if cached_data:
         # print("Cache HIT") # Uncomment for debugging
         # Don't log every cache hit, too noisy
-        # add_access_log(cached_data['data'].get('vehicle_id'), read_uid, 'exit', 'exit', success=1)
+        # add_access_log(cached_data['data'].get('vehicle_id'), read_uid, 'entry', 'entrance', success=1)
         display.root.after(0, display.update_car_info, cached_data['data'], cached_data.get('photo'))
         return cached_data
     
@@ -98,8 +104,8 @@ def check_uid(read_uid, display):
     if not conn:
         # Show N/A but still log a failed attempt
         add_access_log(None, read_uid, 'exit', 'exit', success=0) # This will get its own connection
-        display.root.after(0, display.update_car_info, empty_data, _RED_X_BYTES)
-        return {'data': empty_data, 'photo': _RED_X_BYTES}
+        display.root.after(0, display.update_car_info, empty_data, _RED_X_IMG)
+        return {'data': empty_data, 'photo': _RED_X_IMG}
 
     try:
         cursor = conn.cursor()
@@ -128,9 +134,8 @@ def check_uid(read_uid, display):
         if not result:
             # --- NO MATCH: show red X + log failure (success=0)
             add_access_log(None, read_uid, 'exit', 'exit', success=0)
-            display.root.after(0, display.update_car_info, empty_data, _RED_X_BYTES)
-            
-            return {'data': empty_data, 'photo': _RED_X_BYTES}
+            display.root.after(0, display.update_car_info, empty_data, _RED_X_IMG)
+            return {'data': empty_data, 'photo': _RED_X_IMG}
 
         # --- MATCH FOUND
         (status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type,
@@ -148,9 +153,17 @@ def check_uid(read_uid, display):
             'license_plate': plate_number
         }
 
-        photo = bytes(blob) if blob else None
-        
-        # Store in cache
+        # ... inside the MATCH FOUND section ...
+        (status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type,
+         plate_number, blob, file_type) = result
+
+        # REPLACE the old photo logic with this:
+        if blob:
+            photo = process_image_data(blob) # Resize it NOW
+        else:
+            photo = None
+            
+        # Update cache to store the object, not bytes
         _put_cached(read_uid, {'data': data, 'photo': photo})
 
         # success=1
@@ -166,8 +179,8 @@ def check_uid(read_uid, display):
                       ['sticker_status','usc_id','vehicle_id','student_name','make','model','color','vehicle_type','license_plate']}
         
         add_access_log(None, read_uid, 'exit', 'exit', success=0)
-        display.root.after(0, display.update_car_info, error_data, _RED_X_BYTES)
-        return {'data': error_data, 'photo': _RED_X_BYTES}
+        display.root.after(0, display.update_car_info, error_data, _RED_X_IMG)
+        return {'data': error_data, 'photo': _RED_X_IMG}
     
     finally:
         # --- CRITICAL CHANGE ---

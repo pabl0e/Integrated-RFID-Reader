@@ -166,16 +166,18 @@ class CarInfoDisplay:
         else:
             self.sticker_status_label.config(fg=self.value_color)
 
-    def update_profile_picture(self, image_bytes):
-        """Set/refresh the left photo. None -> blank placeholder."""
-        if image_bytes:
-            img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+    def update_profile_picture(self, image_obj):
+        """
+        Accepts a pre-processed PIL Image object (not bytes).
+        Converts it directly to ImageTk for display.
+        """
+        if image_obj:
+            self._profile_photo = ImageTk.PhotoImage(image_obj)
         else:
-            img = Image.new('RGB', (700, 900), 'white')  # placeholder
+            # Fallback: Create a blank white placeholder (very fast)
+            img = Image.new('RGB', (500, 900), 'white')
+            self._profile_photo = ImageTk.PhotoImage(img)
 
-        target_w, target_h = 500, 900
-        img.thumbnail((target_w, target_h), Image.LANCZOS)
-        self._profile_photo = ImageTk.PhotoImage(img)
         self.profile_image_label.config(image=self._profile_photo)
 
     def update_car_info(self, new_data, profile_picture_bytes=None):
@@ -212,7 +214,9 @@ class CarInfoDisplay:
             self.root.mainloop()
         except KeyboardInterrupt:
             print("\nApplication terminated by user")
+            self.root.destroy() 
             sys.exit(0)
+
     def show_red_x(self, w=500, h=900, thickness=40):
         """Draw a large red X and display it on the left panel."""
         img = Image.new('RGB', (w, h), 'white')
@@ -222,3 +226,4 @@ class CarInfoDisplay:
         d.line((0, h, w, 0), fill=(255, 0, 0), width=thickness)
         self._profile_photo = ImageTk.PhotoImage(img)
         self.profile_image_label.config(image=self._profile_photo)
+        
