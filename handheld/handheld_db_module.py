@@ -325,7 +325,7 @@ def add_new_uid(read_uid: str) -> dict:
     try:
         cursor = conn.cursor()
         query = """
-            INSERT IGNORE INTO rfid_tags (tag_uid, status, issued_date)
+            INSERT IGNORE INTO rfid_tags (tag_uid, status, assigned_date)
             VALUES (%s, 'active', CURDATE())
         """
         cursor.execute(query, (read_uid,))
