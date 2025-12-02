@@ -9,7 +9,8 @@ import uuid
 def connect_maindb():
     try:
         conn = mysql.connector.connect(
-            host='192.168.50.149',	     # Pi's IP address
+            #host='192.168.50.149',	     # Pi's IP address
+            host='192.168.254.114',    # Vince's IP address
             user='binslibal',
             password='Vinceleval423!',
             database='rfid_vehicle_system'  # Using existing database with ALL PRIVILEGES
