@@ -193,9 +193,8 @@ def check_uid(read_uid):
 def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
     """
     Sync violations with CORRECTED mapping for:
-    1. Parking in "No Parking" zones
-    2. Unauthorized Parking in designated Parking spots
-    3. Trimming RFID UIDs to match Main DB (24 chars)
+    1. Trimming RFID UIDs to match Main DB (24 chars) - Fixes "Skipping" error
+    2. Using Absolute Paths for images - Fixes "no_image.jpg" error
     """
     # Acquire connections
     main_conn = connect_maindb()
@@ -227,7 +226,7 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                     # --- STEP 1: MAP DATA ---
                     
                     # A. RFID -> Vehicle ID Lookup (FIXED)
-                    # We slice [:24] to remove the extra suffix (e.g., '2F59')
+                    # We slice [:24] to remove the extra suffix (e.g., '2F59') so it matches Main DB
                     raw_uid = row['rfid_uid']
                     clean_uid = raw_uid[:24]
                     
@@ -235,8 +234,13 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                     tag_result = mcur.fetchone()
                     
                     if not tag_result or tag_result[0] is None:
-                        print(f"Skipping: RFID {clean_uid} is not linked to a vehicle in Main DB.")
-                        continue 
+                        # Fallback: Try the raw UID just in case
+                        mcur.execute("SELECT vehicle_id FROM rfid_tags WHERE tag_uid = %s LIMIT 1", (raw_uid,))
+                        tag_result = mcur.fetchone()
+                        
+                        if not tag_result or tag_result[0] is None:
+                            print(f"Skipping: RFID {clean_uid} is not linked to a vehicle in Main DB.")
+                            continue 
                     
                     vehicle_id = tag_result[0]
 
@@ -249,14 +253,21 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                     elif "Unauthorized" in local_type:
                         v_type_id = 2
                     
-                    # C. Read Image File (BLOB)
+                    # C. Read Image File (BLOB) - FIXED WITH ABSOLUTE PATH
                     image_blob = None
                     image_filename = "no_image.jpg"
                     
-                    if row['photo_path'] and os.path.exists(row['photo_path']):
+                    # Get the directory where THIS script is located
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                    # Join it with the relative path from DB (e.g., "evidences/evidence_...")
+                    full_image_path = os.path.join(base_dir, row['photo_path'])
+                    
+                    if row['photo_path'] and os.path.exists(full_image_path):
                         image_filename = os.path.basename(row['photo_path'])
-                        with open(row['photo_path'], 'rb') as file:
+                        with open(full_image_path, 'rb') as file:
                             image_blob = file.read()
+                    else:
+                        print(f"⚠️ Warning: Could not find image at: {full_image_path}")
                     
                     # --- STEP 2: INSERT INTO MAIN DB ---
                     insert_query = """
@@ -291,7 +302,7 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                         local_conn.commit()
                         
                     stats["uploaded_violations"] += 1
-                    print(f"Synced violation {row['id']} -> Vehicle {vehicle_id}")
+                    print(f"Synced violation {row['id']} -> Vehicle {vehicle_id} (Image: {image_filename})")
 
                 except Exception as inner_e:
                     print(f"Failed to sync violation {row.get('id')}: {inner_e}")
