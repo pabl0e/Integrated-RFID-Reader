@@ -229,20 +229,60 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
             insert_sql = f"INSERT INTO violations ({collist}) VALUES ({placeholders})"
 
             # Upload in batches
+            # Determine indexes for matching columns used to correlate rows
+            try:
+                ridx = all_cols.index('rfid_uid')
+            except ValueError:
+                ridx = None
+            try:
+                tidx = all_cols.index('violation_timestamp')
+            except ValueError:
+                tidx = None
+            try:
+                didx = all_cols.index('device_id')
+            except ValueError:
+                didx = None
+
             while True:
                 rows = lcur.fetchmany(batch_size)
                 if not rows:
                     break
-                
+
                 # Remove id column from each row if it exists
                 if id_index is not None:
                     filtered_rows = [tuple(val for i, val in enumerate(row) if i != id_index) for row in rows]
                 else:
                     filtered_rows = rows
-                    
+
+                # Insert into main DB
                 mcur.executemany(insert_sql, filtered_rows)
                 main_conn.commit()
                 stats["uploaded_violations"] += len(rows)
+
+                # After successful insert, update local sync_status to match main DB 'status' column
+                # We will query main DB for each inserted row using (rfid_uid, violation_timestamp, device_id)
+                if ridx is not None and tidx is not None and didx is not None:
+                    for row in rows:
+                        # original row includes id at id_index; get matching keys from original row
+                        rfid_val = row[ridx]
+                        ts_val = row[tidx]
+                        dev_val = row[didx]
+
+                        try:
+                            # Fetch status from main DB
+                            mcur.execute("SELECT status FROM violations WHERE rfid_uid=%s AND violation_timestamp=%s AND device_id=%s LIMIT 1",
+                                         (rfid_val, ts_val, dev_val))
+                            res = mcur.fetchone()
+                            main_status = res[0] if res else 'synced'
+
+                            # Update local row's sync_status
+                            with closing(local_conn.cursor()) as lupd:
+                                lupd.execute("UPDATE violations SET sync_status=%s WHERE rfid_uid=%s AND violation_timestamp=%s AND device_id=%s",
+                                             (main_status, rfid_val, ts_val, dev_val))
+                                local_conn.commit()
+                        except Exception:
+                            # If any error occurs, continue; do not abort entire sync
+                            continue
 
             # Clear local violations after successful upload
             with closing(local_conn.cursor()) as lpurge:
