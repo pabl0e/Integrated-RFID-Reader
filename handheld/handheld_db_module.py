@@ -192,15 +192,9 @@ def check_uid(read_uid):
 
 def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
     """
-    Sync violations between local and main database.
-    Upload local violations to main database and clear local after successful sync.
-    
-    Args:
-        batch_size: rows per batch for memory/CPU control
-        insert_ignore: if True, use INSERT IGNORE to avoid duplicate-key errors
-        
-    Returns:
-        dict with sync status and counters
+    Sync violations with CORRECTED mapping for:
+    1. Parking in "No Parking" zones
+    2. Unauthorized Parking in designated Parking spots
     """
     # Acquire connections
     main_conn = connect_maindb()
@@ -215,102 +209,101 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
     }
 
     try:
-        with closing(local_conn.cursor()) as lcur, closing(main_conn.cursor()) as mcur:
-            # Upload local violations to main database (excluding id to avoid conflicts)
-            lcur.execute("SELECT * FROM violations")
-            all_cols = [d[0] for d in lcur.description]
+        with closing(local_conn.cursor(dictionary=True)) as lcur, closing(main_conn.cursor()) as mcur:
             
-            # Find id column index and exclude it
-            id_index = all_cols.index('id') if 'id' in all_cols else None
-            violations_cols = [c for c in all_cols if c != 'id']
-            
-            placeholders = ", ".join(["%s"] * len(violations_cols))
-            collist = ", ".join(f"`{c}`" for c in violations_cols)
+            # 1. Get pending local violations
+            lcur.execute("SELECT * FROM violations WHERE sync_status = 'pending'")
+            local_rows = lcur.fetchall()
 
-            insert_sql = f"INSERT INTO violations ({collist}) VALUES ({placeholders})"
+            if not local_rows:
+                print("No pending violations to sync.")
+                return stats
 
-            # Upload in batches
-            # Determine indexes for matching columns used to correlate rows
-            try:
-                ridx = all_cols.index('rfid_uid')
-            except ValueError:
-                ridx = None
-            try:
-                tidx = all_cols.index('violation_timestamp')
-            except ValueError:
-                tidx = None
-            try:
-                didx = all_cols.index('device_id')
-            except ValueError:
-                didx = None
+            print(f"Found {len(local_rows)} pending violations to sync...")
 
-            while True:
-                rows = lcur.fetchmany(batch_size)
-                if not rows:
-                    break
+            for row in local_rows:
+                try:
+                    # --- STEP 1: MAP DATA ---
+                    
+                    # A. RFID -> Vehicle ID Lookup
+                    mcur.execute("SELECT vehicle_id FROM rfid_tags WHERE tag_uid = %s LIMIT 1", (row['rfid_uid'],))
+                    tag_result = mcur.fetchone()
+                    
+                    if not tag_result or tag_result[0] is None:
+                        print(f"Skipping: RFID {row['rfid_uid']} is not linked to a vehicle in Main DB.")
+                        continue 
+                    
+                    vehicle_id = tag_result[0]
 
-                # Remove id column from each row if it exists
-                if id_index is not None:
-                    filtered_rows = [tuple(val for i, val in enumerate(row) if i != id_index) for row in rows]
-                else:
-                    filtered_rows = rows
+                    # B. Violation Type Map (String -> ID)
+                    # UPDATED MAPPING based on your screenshot
+                    local_type = row['violation_type']
+                    v_type_id = 1 # Default to 1
+                    
+                    if "No Parking" in local_type:
+                        v_type_id = 1
+                    elif "Unauthorized" in local_type:
+                        v_type_id = 2
+                    
+                    # C. Read Image File (BLOB)
+                    image_blob = None
+                    image_filename = "no_image.jpg"
+                    
+                    if row['photo_path'] and os.path.exists(row['photo_path']):
+                        image_filename = os.path.basename(row['photo_path'])
+                        with open(row['photo_path'], 'rb') as file:
+                            image_blob = file.read()
+                    
+                    # --- STEP 2: INSERT INTO MAIN DB ---
+                    insert_query = """
+                        INSERT INTO violations 
+                        (vehicle_id, violation_type_id, description, location, reported_by, 
+                         status, created_at, updated_at, image_data, image_filename, 
+                         image_mime_type, contest_status)
+                        VALUES (%s, %s, %s, %s, %s, 'resolved', %s, %s, %s, %s, 'image/jpeg', 'pending')
+                    """
+                    
+                    ts = row.get('violation_timestamp')
 
-                # Insert into main DB
-                mcur.executemany(insert_sql, filtered_rows)
-                main_conn.commit()
-                stats["uploaded_violations"] += len(rows)
+                    mcur.execute(insert_query, (
+                        vehicle_id,
+                        v_type_id,
+                        local_type,     # Use the original local text as the 'description'
+                        row.get('location', 'Unknown'),
+                        1,              # reported_by (Default User ID 1)
+                        ts,             # created_at
+                        ts,             # updated_at
+                        image_blob,
+                        image_filename
+                    ))
+                    
+                    main_conn.commit()
+                    
+                    # --- STEP 3: UPDATE LOCAL STATUS ---
+                    update_query = "UPDATE violations SET sync_status = 'synced' WHERE id = %s"
+                    
+                    with closing(local_conn.cursor()) as update_cur:
+                        update_cur.execute(update_query, (row['id'],))
+                        local_conn.commit()
+                        
+                    stats["uploaded_violations"] += 1
+                    print(f"Synced violation {row['id']} -> Vehicle {vehicle_id} (Type {v_type_id})")
 
-                # After successful insert, update local sync_status to match main DB 'status' column
-                # We will query main DB for each inserted row using (rfid_uid, violation_timestamp, device_id)
-                if ridx is not None and tidx is not None and didx is not None:
-                    for row in rows:
-                        # original row includes id at id_index; get matching keys from original row
-                        rfid_val = row[ridx]
-                        ts_val = row[tidx]
-                        dev_val = row[didx]
-
-                        try:
-                            # Fetch status from main DB
-                            mcur.execute("SELECT status FROM violations WHERE rfid_uid=%s AND violation_timestamp=%s AND device_id=%s LIMIT 1",
-                                         (rfid_val, ts_val, dev_val))
-                            res = mcur.fetchone()
-                            main_status = res[0] if res else 'synced'
-
-                            # Update local row's sync_status
-                            with closing(local_conn.cursor()) as lupd:
-                                lupd.execute("UPDATE violations SET sync_status=%s WHERE rfid_uid=%s AND violation_timestamp=%s AND device_id=%s",
-                                             (main_status, rfid_val, ts_val, dev_val))
-                                local_conn.commit()
-                        except Exception:
-                            # If any error occurs, continue; do not abort entire sync
-                            continue
-
-            # Clear local violations after successful upload
-            with closing(local_conn.cursor()) as lpurge:
-                lpurge.execute("DELETE FROM violations WHERE id > 0")  # Clear all violations
-                local_conn.commit()
+                except Exception as inner_e:
+                    print(f"Failed to sync violation {row.get('id')}: {inner_e}")
+                    continue
 
         return stats
 
     except Error as e:
         stats["ok"] = False
         stats["error"] = f"MySQL error: {e}"
-        return stats
-
-    except Exception as e:
-        stats["ok"] = False
-        stats["error"] = f"Unexpected error: {e}"
+        print(stats["error"])
         return stats
 
     finally:
-        try:
-            local_conn.close()
-        except Exception:
-            pass
-        try:
-            main_conn.close()
-        except Exception:
-            pass
+        if local_conn.is_connected(): local_conn.close()
+        if main_conn.is_connected(): main_conn.close()
 
 def add_new_uid(read_uid: str) -> dict:
     """
@@ -332,7 +325,7 @@ def add_new_uid(read_uid: str) -> dict:
     try:
         cursor = conn.cursor()
         query = """
-            INSERT IGNORE INTO rfid_tags (tag_uid, status, issued_date)
+            INSERT IGNORE INTO rfid_tags (tag_uid, status, assigned_date)
             VALUES (%s, 'active', CURDATE())
         """
         cursor.execute(query, (read_uid,))
