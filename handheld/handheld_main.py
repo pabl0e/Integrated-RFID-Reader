@@ -261,12 +261,11 @@ def run_rfid_scanner():
         return None
 
 def run_photo_capture(picam2):
-    """Capture evidence photo with preview"""
+    """Capture evidence photo with preview - SAVES TO ABSOLUTE PATH"""
     print("=== PHOTO CAPTURE ===")
     
     try:
         from PIL import ImageFont
-        
         try:
             font = ImageFont.load_default()
         except Exception:
@@ -281,69 +280,6 @@ def run_photo_capture(picam2):
                 ('text', (20, 75, "Capturing...", font), {'fill': 'yellow'}),
                 ('text', (15, 95, "Please wait", font), {'fill': 'white'})
             ]
-            
-            if OLED_AVAILABLE:
-                Clear_Screen()
-                Draw_All_Elements(elements_to_draw)
-            else:
-                Draw_All_Elements(elements_to_draw)
-        
-        # Show photo preview screen with actual image
-        def draw_photo_preview_screen(photo_path):
-            try:
-                if OLED_AVAILABLE and os.path.exists(photo_path):
-                    print(f"Displaying captured photo: {photo_path}")
-                    # Clear screen first
-                    Clear_Screen()
-                    
-                    # Load the image first, then display it
-                    try:
-                        from PIL import Image
-                        # Load the captured photo as PIL Image
-                        captured_image = Image.open(photo_path)
-                        # Display the actual captured photo using the Display_Image function
-                        Display_Image(captured_image)
-                    except Exception as load_error:
-                        print(f"Could not load image for display: {load_error}")
-                        # Fallback to text preview if image loading fails
-                        elements_to_draw = [
-                            ('text', (10, 20, "PHOTO PREVIEW", font), {'fill': 'white'}),
-                            ('text', (15, 40, "Image captured", font), {'fill': 'green'}),
-                            ('text', (10, 60, "Load failed", font), {'fill': 'yellow'}),
-                            ('text', (15, 80, "File saved OK", font), {'fill': 'green'})
-                        ]
-                        Draw_All_Elements(elements_to_draw)
-                else:
-                    # Fallback for when OLED not available or file doesn't exist
-                    elements_to_draw = [
-                        ('text', (10, 20, "PHOTO PREVIEW", font), {'fill': 'white'}),
-                        ('text', (15, 40, "Image captured", font), {'fill': 'green'}),
-                        ('text', (10, 60, "OLED preview", font), {'fill': 'yellow'}),
-                        ('text', (15, 80, "not available", font), {'fill': 'yellow'})
-                    ]
-                    Draw_All_Elements(elements_to_draw)
-                    
-            except Exception as img_error:
-                print(f"Image preview error: {img_error}")
-                # Fallback to text preview
-                elements_to_draw = [
-                    ('text', (10, 20, "PHOTO PREVIEW", font), {'fill': 'white'}),
-                    ('text', (15, 40, "Image captured", font), {'fill': 'green'}),
-                    ('text', (10, 60, "Preview failed", font), {'fill': 'yellow'}),
-                    ('text', (15, 80, "File saved OK", font), {'fill': 'green'})
-                ]
-                Draw_All_Elements(elements_to_draw)
-        
-        # Show photo failed screen
-        def draw_photo_failed_screen():
-            elements_to_draw = [
-                ('text', (10, 15, "PHOTO CAPTURE", font), {'fill': 'white'}),
-                ('text', (15, 35, "FAILED", font), {'fill': 'red'}),
-                ('text', (10, 55, "Using mock", font), {'fill': 'yellow'}),
-                ('text', (15, 70, "evidence", font), {'fill': 'yellow'}),
-                ('text', (15, 90, "Continuing...", font), {'fill': 'white'})
-            ]
-            
             if OLED_AVAILABLE:
                 Clear_Screen()
                 Draw_All_Elements(elements_to_draw)
@@ -353,57 +289,102 @@ def run_photo_capture(picam2):
         # Show capture screen
         draw_photo_capture_screen()
         
-        # Create evidences directory if it doesn't exist
-        os.makedirs("evidences", exist_ok=True)
+        # --- PATH FIX: Ensure we save to the absolute directory of the script ---
+        # 1. Get the directory where THIS script is located
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # Generate photo filename with timestamp
+        # 2. Create absolute path for evidences folder
+        evidences_dir = os.path.join(base_dir, "evidences")
+        os.makedirs(evidences_dir, exist_ok=True)
+        
+        # 3. Generate filename
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         photo_filename = f"evidence_{timestamp}.jpg"
-        photo_path = os.path.join("evidences", photo_filename)
         
-        if picam2 and CAMERA_AVAILABLE:
+        # 4. Create FULL path for file saving (e.g., /home/pi/.../evidences/img.jpg)
+        full_photo_path = os.path.join(evidences_dir, photo_filename)
+        
+        # 5. Create RELATIVE path for Database (e.g., evidences/img.jpg)
+        # This is what goes into the DB so the sync script can reconstruct it later
+        db_photo_path = os.path.join("evidences", photo_filename)
+        
+        # Show photo preview screen
+        def draw_photo_preview_screen(path_to_display):
             try:
-                # Capture actual photo
-                time.sleep(1)  # Brief delay to show capture screen
-                picam2.capture_file(photo_path)
-                print(f"Photo captured: {photo_path}")
-                
-                # Show photo preview with actual image
-                draw_photo_preview_screen(photo_path)
-                time.sleep(3)  # Show preview for 3 seconds
-                
-                return True, photo_path
-            except Exception as e:
-                print(f"Camera capture failed: {e}")
-                draw_photo_failed_screen()
-                time.sleep(2)
-        else:
-            # Show capture delay for mock camera
-            time.sleep(1)
-            draw_photo_failed_screen()
-            time.sleep(1)
-        
-        # Fallback: create a placeholder file
-        try:
-            with open(photo_path, 'w') as f:
-                f.write(f"Mock evidence photo - {timestamp}")
-            print(f"Mock photo created: {photo_path}")
-            
-            # Show mock photo preview (no actual image to display)
+                if OLED_AVAILABLE and os.path.exists(path_to_display):
+                    print(f"Displaying captured photo: {path_to_display}")
+                    Clear_Screen()
+                    try:
+                        from PIL import Image
+                        captured_image = Image.open(path_to_display)
+                        Display_Image(captured_image)
+                    except Exception as load_error:
+                        print(f"Could not load image: {load_error}")
+                else:
+                    elements_to_draw = [
+                        ('text', (10, 20, "PHOTO PREVIEW", font), {'fill': 'white'}),
+                        ('text', (15, 40, "Image captured", font), {'fill': 'green'}),
+                        ('text', (10, 60, "Saved OK", font), {'fill': 'green'})
+                    ]
+                    Draw_All_Elements(elements_to_draw)
+            except Exception as img_error:
+                print(f"Image preview error: {img_error}")
+
+        # Show failed screen
+        def draw_photo_failed_screen():
             elements_to_draw = [
-                ('text', (10, 20, "MOCK PREVIEW", font), {'fill': 'yellow'}),
-                ('text', (15, 40, "No camera", font), {'fill': 'red'}),
-                ('text', (10, 60, "Mock file", font), {'fill': 'yellow'}),
-                ('text', (15, 80, "created", font), {'fill': 'yellow'})
+                ('text', (10, 15, "PHOTO CAPTURE", font), {'fill': 'white'}),
+                ('text', (15, 35, "FAILED", font), {'fill': 'red'}),
+                ('text', (10, 55, "Using mock", font), {'fill': 'yellow'})
             ]
             if OLED_AVAILABLE:
                 Clear_Screen()
                 Draw_All_Elements(elements_to_draw)
             else:
                 Draw_All_Elements(elements_to_draw)
-            time.sleep(2)  # Show mock preview for 2 seconds
+
+        # CAPTURE LOGIC
+        if picam2 and CAMERA_AVAILABLE:
+            try:
+                time.sleep(1)
+                # Save to the ABSOLUTE path
+                picam2.capture_file(full_photo_path)
+                print(f"Photo captured to: {full_photo_path}")
+                
+                draw_photo_preview_screen(full_photo_path)
+                time.sleep(3)
+                
+                # Return True and the RELATIVE path for the DB
+                return True, db_photo_path
+            except Exception as e:
+                print(f"Camera capture failed: {e}")
+                draw_photo_failed_screen()
+                time.sleep(2)
+        else:
+            # Mock camera logic
+            time.sleep(1)
+            draw_photo_failed_screen()
+            time.sleep(1)
+        
+        # Fallback / Mock file creation
+        try:
+            with open(full_photo_path, 'w') as f:
+                f.write(f"Mock evidence photo - {timestamp}")
+            print(f"Mock photo created at: {full_photo_path}")
             
-            return True, photo_path
+            elements_to_draw = [
+                ('text', (10, 20, "MOCK SAVED", font), {'fill': 'yellow'}),
+                ('text', (10, 40, "No Camera", font), {'fill': 'red'})
+            ]
+            if OLED_AVAILABLE:
+                Clear_Screen()
+                Draw_All_Elements(elements_to_draw)
+            else:
+                Draw_All_Elements(elements_to_draw)
+            time.sleep(2)
+            
+            return True, db_photo_path
+            
         except Exception as e:
             print(f"Failed to create photo file: {e}")
             return False, None
