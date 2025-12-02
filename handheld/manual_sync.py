@@ -35,6 +35,12 @@ def sync_rfid_tags():
         # Get column names
         columns = [desc[0] for desc in local_cursor.description]
         
+        # Find index of 'tag_uid' so we can clean it
+        try:
+            uid_index = columns.index('tag_uid')
+        except ValueError:
+            uid_index = -1
+
         # Prepare insert query for main database
         placeholders = ', '.join(['%s'] * len(columns))
         insert_query = f"INSERT IGNORE INTO rfid_tags ({', '.join(columns)}) VALUES ({placeholders})"
@@ -44,11 +50,20 @@ def sync_rfid_tags():
         # Insert tags into main database
         for tag in local_tags:
             try:
-                main_cursor.execute(insert_query, tag)
+                # Convert tuple to list to modify it
+                tag_data = list(tag)
+                
+                # Clean the UID if found (slice to first 24 chars)
+                if uid_index != -1 and isinstance(tag_data[uid_index], str):
+                    tag_data[uid_index] = tag_data[uid_index][:24]
+                
+                main_cursor.execute(insert_query, tuple(tag_data))
                 if main_cursor.rowcount > 0:
                     uploaded_count += 1
             except Exception as e:
-                print(f"⚠️  Failed to sync tag {tag[1] if len(tag) > 1 else 'unknown'}: {e}")
+                # Use safe indexing for error message
+                tag_id = tag[1] if len(tag) > 1 else 'unknown'
+                print(f"⚠️  Failed to sync tag {tag_id}: {e}")
         
         main_conn.commit()
         print(f"✅ Synced {uploaded_count} RFID tags to main database")
@@ -105,9 +120,9 @@ def get_sync_stats():
         cursor = local_conn.cursor()
         
         # Check violations
-        cursor.execute("SELECT COUNT(*) FROM violations")
+        cursor.execute("SELECT COUNT(*) FROM violations WHERE sync_status = 'pending'")
         violations_count = cursor.fetchone()[0]
-        print(f"📊 Local violations: {violations_count}")
+        print(f"📊 Local violations (pending): {violations_count}")
         
         # Check RFID tags
         cursor.execute("SELECT COUNT(*) FROM rfid_tags")
@@ -194,4 +209,4 @@ def main():
         perform_full_sync()
 
 if __name__ == "__main__":
-    main()  
+    main()

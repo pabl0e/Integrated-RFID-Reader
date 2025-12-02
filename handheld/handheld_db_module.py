@@ -195,6 +195,7 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
     Sync violations with CORRECTED mapping for:
     1. Parking in "No Parking" zones
     2. Unauthorized Parking in designated Parking spots
+    3. Trimming RFID UIDs to match Main DB (24 chars)
     """
     # Acquire connections
     main_conn = connect_maindb()
@@ -225,20 +226,23 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                 try:
                     # --- STEP 1: MAP DATA ---
                     
-                    # A. RFID -> Vehicle ID Lookup
-                    mcur.execute("SELECT vehicle_id FROM rfid_tags WHERE tag_uid = %s LIMIT 1", (row['rfid_uid'],))
+                    # A. RFID -> Vehicle ID Lookup (FIXED)
+                    # We slice [:24] to remove the extra suffix (e.g., '2F59')
+                    raw_uid = row['rfid_uid']
+                    clean_uid = raw_uid[:24]
+                    
+                    mcur.execute("SELECT vehicle_id FROM rfid_tags WHERE tag_uid = %s LIMIT 1", (clean_uid,))
                     tag_result = mcur.fetchone()
                     
                     if not tag_result or tag_result[0] is None:
-                        print(f"Skipping: RFID {row['rfid_uid']} is not linked to a vehicle in Main DB.")
+                        print(f"Skipping: RFID {clean_uid} is not linked to a vehicle in Main DB.")
                         continue 
                     
                     vehicle_id = tag_result[0]
 
                     # B. Violation Type Map (String -> ID)
-                    # UPDATED MAPPING based on your screenshot
                     local_type = row['violation_type']
-                    v_type_id = 1 # Default to 1
+                    v_type_id = 1 # Default
                     
                     if "No Parking" in local_type:
                         v_type_id = 1
@@ -268,9 +272,9 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                     mcur.execute(insert_query, (
                         vehicle_id,
                         v_type_id,
-                        local_type,     # Use the original local text as the 'description'
+                        local_type,
                         row.get('location', 'Unknown'),
-                        1,              # reported_by (Default User ID 1)
+                        1,              # reported_by
                         ts,             # created_at
                         ts,             # updated_at
                         image_blob,
@@ -287,7 +291,7 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                         local_conn.commit()
                         
                     stats["uploaded_violations"] += 1
-                    print(f"Synced violation {row['id']} -> Vehicle {vehicle_id} (Type {v_type_id})")
+                    print(f"Synced violation {row['id']} -> Vehicle {vehicle_id}")
 
                 except Exception as inner_e:
                     print(f"Failed to sync violation {row.get('id')}: {inner_e}")
