@@ -1,8 +1,6 @@
 #!/bin/bash
-"""
-RFID Auto-Sync Service Control Script
-Manages the automated database synchronization service
-"""
+# RFID Auto-Sync Service Control Script
+# Manages the automated database synchronization service
 
 SERVICE_NAME="rfid-autosync"
 SERVICE_FILE="rfid-autosync.service"

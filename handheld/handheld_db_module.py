@@ -215,21 +215,32 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
 
     try:
         with closing(local_conn.cursor()) as lcur, closing(main_conn.cursor()) as mcur:
-            # Upload local violations to main database
+            # Upload local violations to main database (excluding id to avoid conflicts)
             lcur.execute("SELECT * FROM violations")
-            violations_cols = [d[0] for d in lcur.description]
+            all_cols = [d[0] for d in lcur.description]
+            
+            # Find id column index and exclude it
+            id_index = all_cols.index('id') if 'id' in all_cols else None
+            violations_cols = [c for c in all_cols if c != 'id']
+            
             placeholders = ", ".join(["%s"] * len(violations_cols))
             collist = ", ".join(f"`{c}`" for c in violations_cols)
 
-            insert_kw = "INSERT IGNORE" if insert_ignore else "INSERT"
-            insert_sql = f"{insert_kw} INTO violations ({collist}) VALUES ({placeholders})"
+            insert_sql = f"INSERT INTO violations ({collist}) VALUES ({placeholders})"
 
             # Upload in batches
             while True:
                 rows = lcur.fetchmany(batch_size)
                 if not rows:
                     break
-                mcur.executemany(insert_sql, rows)
+                
+                # Remove id column from each row if it exists
+                if id_index is not None:
+                    filtered_rows = [tuple(val for i, val in enumerate(row) if i != id_index) for row in rows]
+                else:
+                    filtered_rows = rows
+                    
+                mcur.executemany(insert_sql, filtered_rows)
                 main_conn.commit()
                 stats["uploaded_violations"] += len(rows)
 
