@@ -194,4 +194,4 @@ def main():
         perform_full_sync()
 
 if __name__ == "__main__":
-    main()
+    main()  

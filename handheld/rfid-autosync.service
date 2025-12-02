@@ -6,17 +6,17 @@ Restart=always
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/Integrated-RFID-Reader/handheld
-ExecStart=/usr/bin/python3 /home/pi/Integrated-RFID-Reader/handheld/auto_sync_service.py
+User=binslibal
+Group=binslibal
+WorkingDirectory=/home/binslibal/Integrated-RFID-Reader/handheld
+ExecStart=/usr/bin/python3 /home/binslibal/Integrated-RFID-Reader/handheld/auto_sync_service.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
 # Environment variables
-Environment=PYTHONPATH=/home/pi/Integrated-RFID-Reader/handheld
+Environment=PYTHONPATH=/home/binslibal/Integrated-RFID-Reader/handheld
 
 [Install]
 WantedBy=multi-user.target
