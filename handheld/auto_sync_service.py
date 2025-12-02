@@ -49,7 +49,7 @@ class AutoSyncService:
             if os.path.exists(self.status_file):
                 with open(self.status_file, 'r') as f:
                     status = json.load(f)
-                    if 'last_successful_sync' in status:
+                    if status.get('last_successful_sync'):
                         self.last_successful_sync = datetime.fromisoformat(status['last_successful_sync'])
                     self.logger.info(f"Loaded sync status: last successful sync at {self.last_successful_sync}")
         except Exception as e:
