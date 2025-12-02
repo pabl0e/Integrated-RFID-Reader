@@ -38,7 +38,7 @@ install_service() {
     
     # Create log file with proper permissions
     touch $LOG_FILE
-    chown pi:pi $LOG_FILE
+    chown binslibal:binslibal $LOG_FILE
     chmod 664 $LOG_FILE
     
     # Reload systemd and enable service
