@@ -10,10 +10,12 @@ def connect_maindb():
     try:
         conn = mysql.connector.connect(
             #host='192.168.50.149',	     # Pi's IP address
-            host='192.168.254.114',    # Vince's IP address
+            #host='192.168.254.114',    # Vince's IP address
+            host='10.115.157.248',
             user='binslibal',
             password='Vinceleval423!',
-            database='rfid_vehicle_system'  # Using existing database with ALL PRIVILEGES
+            database='rfid_vehicle_system',  # Using existing database with ALL PRIVILEGES
+            ssl_disabled=True,  # Disable SSL to fix version mismatch error
         )
         print("Connected to the Main Database Successfully")
         return conn
@@ -275,7 +277,7 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                         (vehicle_id, violation_type_id, description, location, reported_by, 
                          status, created_at, updated_at, image_data, image_filename, 
                          image_mime_type, contest_status)
-                        VALUES (%s, %s, %s, %s, %s, 'resolved', %s, %s, %s, %s, 'image/jpeg', 'pending')
+                        VALUES (%s, %s, %s, %s, %s, 'resolved', %s, %s, %s, %s, 'image/jpeg', NULL)
                     """
                     
                     ts = row.get('violation_timestamp')
