@@ -16,10 +16,13 @@ from handheld_db_module import store_evidence, check_uid, add_new_uid
 
 # DFR0528 UPS HAT Battery Reading
 UPS_AVAILABLE = False
+UPS_I2C_ADDRESS = 0x10  # DFR0528 I2C address
 try:
     import smbus
-    UPS_I2C_ADDRESS = 0x10  # DFR0528 I2C address
-    UPS_BUS = smbus.SMBus(1)
+    # Test connection
+    _test_bus = smbus.SMBus(1)
+    _test_bus.read_byte_data(UPS_I2C_ADDRESS, 0x01)  # Read PID to verify
+    _test_bus.close()
     UPS_AVAILABLE = True
     print("UPS HAT (DFR0528) initialized successfully")
 except ImportError:
@@ -32,25 +35,25 @@ def get_battery_level():
     Read battery percentage from DFR0528 UPS HAT.
     Returns battery percentage (0-100) or -1 if unavailable.
     
-    DFR0528 returns voltage as 16-bit value from registers 0x02-0x03.
-    Calibrated for Li-ion: 3.2V (empty) to 4.2V (full)
+    Uses Electric Quantity registers 0x05 (high) and 0x06 (low).
+    LSB = 0.003906% per the datasheet.
     """
     if not UPS_AVAILABLE:
         return -1
     
     try:
-        # Read voltage registers
-        low_byte = UPS_BUS.read_byte_data(UPS_I2C_ADDRESS, 0x02)
-        high_byte = UPS_BUS.read_byte_data(UPS_I2C_ADDRESS, 0x03)
-        raw_value = (high_byte << 8) | low_byte
+        # Create fresh bus connection each time to get updated readings
+        bus = smbus.SMBus(1)
         
-        # Calibration for DFR0528 (based on actual readings)
-        # 2 bars (40%) = raw 2835, 4 bars (80%) = raw 3091
-        MIN_RAW = 2580  # Empty battery (0 bars)
-        MAX_RAW = 3220  # Full battery (5 bars)
+        # Read SOC (State of Charge) registers
+        soc_high = bus.read_byte_data(UPS_I2C_ADDRESS, 0x05)
+        soc_low = bus.read_byte_data(UPS_I2C_ADDRESS, 0x06)
         
-        # Calculate percentage
-        percentage = int((raw_value - MIN_RAW) / (MAX_RAW - MIN_RAW) * 100)
+        bus.close()
+        
+        # Calculate percentage: (high << 8 | low) * 0.003906
+        raw_soc = (soc_high << 8) | soc_low
+        percentage = int(raw_soc * 0.003906)
         
         # Clamp to valid range
         if percentage > 100:
@@ -62,6 +65,46 @@ def get_battery_level():
     except Exception as e:
         print(f"Battery read error: {e}")
         return -1
+
+def get_battery_voltage():
+    """
+    Read battery voltage from DFR0528 UPS HAT.
+    Returns voltage in mV or -1 if unavailable.
+    
+    Uses Voltage registers 0x03 (high) and 0x04 (low).
+    LSB = 1.25mV per the datasheet.
+    """
+    if not UPS_AVAILABLE:
+        return -1
+    
+    try:
+        bus = smbus.SMBus(1)
+        
+        # Read voltage registers
+        v_high = bus.read_byte_data(UPS_I2C_ADDRESS, 0x03)
+        v_low = bus.read_byte_data(UPS_I2C_ADDRESS, 0x04)
+        
+        bus.close()
+        
+        # Calculate voltage: (high << 8 | low) * 1.25 mV
+        raw_voltage = (v_high << 8) | v_low
+        voltage_mv = int(raw_voltage * 1.25)
+        
+        return voltage_mv
+    except Exception as e:
+        print(f"Voltage read error: {e}")
+        return -1
+
+def is_charging():
+    """
+    Detect if the UPS HAT is charging.
+    Charging is detected when voltage > 4150mV (typical charging voltage).
+    """
+    voltage = get_battery_voltage()
+    if voltage < 0:
+        return False
+    # Li-ion charges above 4.15V typically
+    return voltage > 4150
 
 def get_battery_icon(level):
     """Return a text icon based on battery level"""
@@ -169,11 +212,17 @@ def show_main_menu_with_camera():
         
         # Show main menu screen
         def draw_main_menu():
-            # Get battery level
+            # Get battery level and charging status
             battery = get_battery_level()
+            charging = is_charging()
+            
             if battery >= 0:
-                battery_text = f"Batt: {battery}%"
-                battery_color = 'green' if battery > 25 else ('yellow' if battery > 10 else 'red')
+                if charging:
+                    battery_text = f"Batt: {battery}% CHG"
+                    battery_color = 'cyan'
+                else:
+                    battery_text = f"Batt: {battery}%"
+                    battery_color = 'green' if battery > 25 else ('yellow' if battery > 10 else 'red')
             else:
                 battery_text = "Batt: N/A"
                 battery_color = 'white'
