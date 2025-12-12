@@ -14,6 +14,55 @@ from PIL import ImageFont
 from handheld_rfid_module import scan_rfid_for_enforcement
 from handheld_db_module import store_evidence, check_uid, add_new_uid
 
+# DFR0528 UPS HAT Battery Reading
+UPS_AVAILABLE = False
+try:
+    import smbus
+    UPS_I2C_ADDRESS = 0x10  # DFR0528 I2C address
+    UPS_BUS = smbus.SMBus(1)
+    UPS_AVAILABLE = True
+    print("UPS HAT (DFR0528) initialized successfully")
+except ImportError:
+    print("smbus not available, battery monitoring disabled")
+except Exception as e:
+    print(f"UPS HAT initialization failed: {e}")
+
+def get_battery_level():
+    """
+    Read battery percentage from DFR0528 UPS HAT.
+    Returns battery percentage (0-100) or -1 if unavailable.
+    """
+    if not UPS_AVAILABLE:
+        return -1
+    
+    try:
+        # DFR0528 returns battery level at register 0x2A
+        battery = UPS_BUS.read_byte_data(UPS_I2C_ADDRESS, 0x2A)
+        # Clamp to valid range
+        if battery > 100:
+            battery = 100
+        elif battery < 0:
+            battery = 0
+        return battery
+    except Exception as e:
+        print(f"Battery read error: {e}")
+        return -1
+
+def get_battery_icon(level):
+    """Return a text icon based on battery level"""
+    if level < 0:
+        return "[???]"
+    elif level <= 10:
+        return "[!  ]"  # Critical
+    elif level <= 25:
+        return "[=  ]"  # Low
+    elif level <= 50:
+        return "[== ]"  # Medium
+    elif level <= 75:
+        return "[===]"  # Good
+    else:
+        return "[===]"  # Full
+
 # Add delay for SPI interface initialization on startup
 print("Initializing SPI interface for OLED...")
 time.sleep(10)  # Allow SPI interface to stabilize
@@ -105,14 +154,24 @@ def show_main_menu_with_camera():
         
         # Show main menu screen
         def draw_main_menu():
+            # Get battery level
+            battery = get_battery_level()
+            if battery >= 0:
+                battery_text = f"Batt: {battery}%"
+                battery_color = 'green' if battery > 25 else ('yellow' if battery > 10 else 'red')
+            else:
+                battery_text = "Batt: N/A"
+                battery_color = 'white'
+            
             elements_to_draw = [
-                ('text', (10, 10, "PARKING", font), {'fill': 'white'}),
-                ('text', (10, 25, "VIOLATIONS", font), {'fill': 'white'}),
-                ('text', (10, 40, "ENFORCEMENT", font), {'fill': 'white'}),
-                ('text', (10, 60, "CENTER: Start", font), {'fill': 'cyan'}),
-                ('text', (10, 75, "BACK: UID Reg", font), {'fill': 'blue'}),
-                ('text', (10, 88, "UP+DOWN: Exit", font), {'fill': 'red'}),
-                ('text', (10, 100, "Ready to scan!", font), {'fill': 'white'})
+                ('text', (10, 5, "PARKING", font), {'fill': 'white'}),
+                ('text', (10, 18, "VIOLATIONS", font), {'fill': 'white'}),
+                ('text', (10, 31, "ENFORCEMENT", font), {'fill': 'white'}),
+                ('text', (10, 48, "CENTER: Start", font), {'fill': 'cyan'}),
+                ('text', (10, 61, "BACK: UID Reg", font), {'fill': 'blue'}),
+                ('text', (10, 74, "UP+DOWN: Exit", font), {'fill': 'red'}),
+                ('text', (10, 90, battery_text, font), {'fill': battery_color}),
+                ('text', (10, 105, "Ready!", font), {'fill': 'white'})
             ]
             
             if OLED_AVAILABLE:
