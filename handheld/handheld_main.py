@@ -271,6 +271,72 @@ def run_photo_capture(picam2):
         except Exception:
             font = None
         
+        # Try to import GPIO for button handling
+        try:
+            import RPi.GPIO as GPIO
+            GPIO_AVAILABLE = True
+            
+            CENTER_PIN = 17 # GPIO 17 (Pin 11)
+            BACK_PIN = 26   # GPIO 26 (Pin 37)
+            
+            try:
+                try:
+                    GPIO.setmode(GPIO.BCM)
+                except:
+                    pass
+                GPIO.setup([CENTER_PIN, BACK_PIN], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+            except Exception as gpio_error:
+                print(f"GPIO setup error: {gpio_error}")
+                GPIO_AVAILABLE = False
+                
+        except ImportError:
+            print("RPi.GPIO not available, using keyboard input fallback")
+            GPIO_AVAILABLE = False
+        
+        # Show "Ready to capture" screen - wait for CENTER button
+        def draw_ready_to_capture_screen():
+            elements_to_draw = [
+                ('text', (10, 10, "PHOTO CAPTURE", font), {'fill': 'white'}),
+                ('text', (10, 30, "Aim camera at", font), {'fill': 'cyan'}),
+                ('text', (10, 45, "the violation", font), {'fill': 'cyan'}),
+                ('text', (10, 65, "CENTER: Capture", font), {'fill': 'green'}),
+                ('text', (10, 80, "BACK: Cancel", font), {'fill': 'red'}),
+                ('text', (10, 100, "Ready...", font), {'fill': 'yellow'})
+            ]
+            if OLED_AVAILABLE:
+                Clear_Screen()
+                Draw_All_Elements(elements_to_draw)
+            else:
+                Draw_All_Elements(elements_to_draw)
+        
+        # Wait for user to press CENTER before capturing
+        draw_ready_to_capture_screen()
+        
+        if GPIO_AVAILABLE:
+            print("Press CENTER to capture photo, BACK to cancel")
+            while True:
+                center_state = GPIO.input(CENTER_PIN)
+                back_state = GPIO.input(BACK_PIN)
+                
+                if center_state == GPIO.HIGH:
+                    print("CENTER button pressed - Capturing photo...")
+                    time.sleep(0.3)  # Debounce
+                    break
+                
+                elif back_state == GPIO.HIGH:
+                    print("BACK button pressed - Photo capture cancelled")
+                    time.sleep(0.3)  # Debounce
+                    return False, None
+                
+                time.sleep(0.1)
+        else:
+            # Keyboard fallback
+            print("Press Enter to capture photo, 'q' to cancel:")
+            user_input = input().strip().lower()
+            if user_input == 'q':
+                print("Photo capture cancelled")
+                return False, None
+        
         # Show photo capture screen
         def draw_photo_capture_screen():
             elements_to_draw = [
