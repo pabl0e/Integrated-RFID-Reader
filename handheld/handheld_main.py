@@ -31,19 +31,34 @@ def get_battery_level():
     """
     Read battery percentage from DFR0528 UPS HAT.
     Returns battery percentage (0-100) or -1 if unavailable.
+    
+    DFR0528 returns voltage as 16-bit value from registers 0x02-0x03.
+    Calibrated for Li-ion: 3.2V (empty) to 4.2V (full)
     """
     if not UPS_AVAILABLE:
         return -1
     
     try:
-        # DFR0528 returns battery level at register 0x2A
-        battery = UPS_BUS.read_byte_data(UPS_I2C_ADDRESS, 0x2A)
+        # Read voltage registers
+        low_byte = UPS_BUS.read_byte_data(UPS_I2C_ADDRESS, 0x02)
+        high_byte = UPS_BUS.read_byte_data(UPS_I2C_ADDRESS, 0x03)
+        raw_value = (high_byte << 8) | low_byte
+        
+        # Calibration for DFR0528 (empirically determined)
+        # Raw ~2550 = empty (3.2V), Raw ~3350 = full (4.2V)
+        MIN_RAW = 2550  # Empty battery
+        MAX_RAW = 3350  # Full battery
+        
+        # Calculate percentage
+        percentage = int((raw_value - MIN_RAW) / (MAX_RAW - MIN_RAW) * 100)
+        
         # Clamp to valid range
-        if battery > 100:
-            battery = 100
-        elif battery < 0:
-            battery = 0
-        return battery
+        if percentage > 100:
+            percentage = 100
+        elif percentage < 0:
+            percentage = 0
+            
+        return percentage
     except Exception as e:
         print(f"Battery read error: {e}")
         return -1
