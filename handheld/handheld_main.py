@@ -44,10 +44,10 @@ def get_battery_level():
         high_byte = UPS_BUS.read_byte_data(UPS_I2C_ADDRESS, 0x03)
         raw_value = (high_byte << 8) | low_byte
         
-        # Calibration for DFR0528 (empirically determined)
-        # Raw ~2550 = empty (3.2V), Raw ~3350 = full (4.2V)
-        MIN_RAW = 2550  # Empty battery
-        MAX_RAW = 3350  # Full battery
+        # Calibration for DFR0528 (based on actual readings)
+        # 2 bars (40%) = raw 2835, 4 bars (80%) = raw 3091
+        MIN_RAW = 2580  # Empty battery (0 bars)
+        MAX_RAW = 3220  # Full battery (5 bars)
         
         # Calculate percentage
         percentage = int((raw_value - MIN_RAW) / (MAX_RAW - MIN_RAW) * 100)
