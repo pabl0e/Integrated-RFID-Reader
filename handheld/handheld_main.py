@@ -417,6 +417,16 @@ def run_photo_capture(picam2):
                 picam2.capture_file(full_photo_path)
                 print(f"Photo captured to: {full_photo_path}")
                 
+                # Rotate the image 90 degrees clockwise to correct orientation
+                try:
+                    from PIL import Image
+                    img = Image.open(full_photo_path)
+                    img_rotated = img.rotate(90, expand=True)
+                    img_rotated.save(full_photo_path)
+                    print("Image rotated 90° clockwise for correct orientation")
+                except Exception as rotate_error:
+                    print(f"Image rotation failed (using original): {rotate_error}")
+                
                 draw_photo_preview_screen(full_photo_path)
                 time.sleep(3)
                 
