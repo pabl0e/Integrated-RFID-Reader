@@ -16,9 +16,9 @@ from datetime import datetime, timedelta
 from handheld_db_module import connect_localdb, connect_maindb, sync_violations
 from handheld_db_module import add_new_uid  # We'll modify this to also sync RFID tags
 
-# Configure logging
+# Configure logging - DEBUG level for troubleshooting
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler('/var/log/rfid_sync.log'),
@@ -92,6 +92,7 @@ class AutoSyncService:
     
     def check_main_database_connectivity(self):
         """Check if main database is reachable"""
+        self.logger.debug("Checking main database connectivity...")
         try:
             # Try to connect to main database
             conn = connect_maindb()
@@ -102,10 +103,12 @@ class AutoSyncService:
                 cursor.fetchone()
                 cursor.close()
                 conn.close()
+                self.logger.debug("Main database connectivity check: SUCCESS")
                 return True
+            self.logger.warning("Main database connectivity check: connection returned None")
             return False
         except Exception as e:
-            self.logger.debug(f"Main database connectivity check failed: {e}")
+            self.logger.warning(f"Main database connectivity check failed: {e}")
             return False
     
     def sync_rfid_tags(self):
@@ -212,46 +215,53 @@ class AutoSyncService:
         # Don't sync too frequently
         if (self.last_sync_attempt and 
             now - self.last_sync_attempt < timedelta(seconds=self.min_sync_interval)):
+            time_since = (now - self.last_sync_attempt).total_seconds()
+            self.logger.debug(f"Skipping sync: only {time_since:.0f}s since last attempt (min: {self.min_sync_interval}s)")
             return False
         
         # Always sync if we've never synced successfully
         if not self.last_successful_sync:
+            self.logger.debug("Will sync: never synced successfully before")
             return True
         
         # Sync if it's been more than the sync interval since last attempt
         if (self.last_sync_attempt and 
             now - self.last_sync_attempt >= timedelta(seconds=self.sync_interval)):
+            self.logger.debug(f"Will sync: {self.sync_interval}s interval reached")
             return True
         
-        # Sync if WiFi just came online and we haven't synced recently
-        if (self.wifi_connected and self.main_db_reachable and
+        # Sync if database is reachable and we haven't synced recently
+        if (self.main_db_reachable and
             now - self.last_successful_sync >= timedelta(seconds=self.min_sync_interval)):
+            self.logger.debug("Will sync: database reachable and min interval passed")
             return True
         
+        time_since_success = (now - self.last_successful_sync).total_seconds() if self.last_successful_sync else 0
+        self.logger.debug(f"Skipping sync: conditions not met (last success: {time_since_success:.0f}s ago)")
         return False
     
     def monitor_and_sync(self):
         """Main monitoring loop"""
         self.logger.info("Starting automated sync service...")
+        self.logger.info(f"Sync interval: {self.sync_interval}s, Min interval: {self.min_sync_interval}s")
         
         while self.running:
             try:
-                # Check connectivity status
-                prev_wifi_status = self.wifi_connected
+                # Check connectivity status - DIRECTLY check database (skip WiFi check)
+                # This matches manual_sync.py behavior which works reliably
                 prev_db_status = self.main_db_reachable
                 
-                self.wifi_connected = self.check_wifi_connection()
-                self.main_db_reachable = self.check_main_database_connectivity() if self.wifi_connected else False
+                self.logger.debug("Checking database connectivity...")
+                self.main_db_reachable = self.check_main_database_connectivity()
                 
                 # Log connectivity changes
-                if prev_wifi_status != self.wifi_connected:
-                    self.logger.info(f"WiFi status changed: {'Connected' if self.wifi_connected else 'Disconnected'}")
-                
                 if prev_db_status != self.main_db_reachable:
                     self.logger.info(f"Main database status changed: {'Reachable' if self.main_db_reachable else 'Unreachable'}")
+                else:
+                    self.logger.debug(f"Database status: {'Reachable' if self.main_db_reachable else 'Unreachable'}")
                 
-                # Attempt sync if conditions are met
-                if (self.wifi_connected and self.main_db_reachable and self.should_attempt_sync()):
+                # Attempt sync if database is reachable and timing conditions are met
+                if self.main_db_reachable and self.should_attempt_sync():
                     self.last_sync_attempt = datetime.now()
                     self.logger.info("Attempting database synchronization...")
                     
@@ -260,6 +270,8 @@ class AutoSyncService:
                         self.logger.info("Synchronization completed successfully")
                     else:
                         self.logger.warning("Synchronization completed with errors")
+                elif not self.main_db_reachable:
+                    self.logger.debug("Sync skipped: database not reachable")
                 
                 # Save current status
                 self.save_sync_status()
