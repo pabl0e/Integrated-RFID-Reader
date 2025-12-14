@@ -243,7 +243,7 @@ def show_main_menu_with_camera():
                 ('text', (10, 5, "PARKING", font), {'fill': 'white'}),
                 ('text', (10, 18, "VIOLATIONS", font), {'fill': 'white'}),
                 ('text', (10, 31, "ENFORCEMENT", font), {'fill': 'white'}),
-                ('text', (10, 48, "CENTER: Start", font), {'fill': 'cyan'}),
+                ('text', (10, 48, "RIGHT: Start", font), {'fill': 'cyan'}),
                 ('text', (10, 61, "BACK: UID Reg", font), {'fill': 'blue'}),
                 ('text', (10, 74, "UP+DOWN: Exit", font), {'fill': 'red'}),
                 ('text', (10, 90, battery_text, font), {'fill': battery_color}),
@@ -442,7 +442,7 @@ def run_photo_capture(picam2):
                 ('text', (10, 10, "PHOTO CAPTURE", font), {'fill': 'white'}),
                 ('text', (10, 30, "Aim camera at", font), {'fill': 'cyan'}),
                 ('text', (10, 45, "the violation", font), {'fill': 'cyan'}),
-                ('text', (10, 65, "CENTER: Capture", font), {'fill': 'cyan'}),  # Shows as yellow on BGR
+                ('text', (10, 65, "RIGHT: Capture", font), {'fill': 'cyan'}),  # Shows as yellow on BGR
                 ('text', (10, 80, "BACK: Cancel", font), {'fill': 'blue'}),  # Shows as red on BGR
                 ('text', (10, 100, "Ready...", font), {'fill': 'green'})
             ]
@@ -696,7 +696,7 @@ def run_violation_selector():
             
             # Draw instructions
             elements_to_draw.append(('text', (5, 90, "UP/DOWN: Navigate", font), {'fill': 'cyan'}))
-            elements_to_draw.append(('text', (5, 105, "CENTER: Select", font), {'fill': 'cyan'}))
+            elements_to_draw.append(('text', (5, 105, "RIGHT: Select", font), {'fill': 'cyan'}))
             
             if OLED_AVAILABLE:
                 Clear_Screen()
@@ -828,7 +828,7 @@ def run_uid_registration():
                 ('text', (10, 10, "UID", font), {'fill': 'white'}),
                 ('text', (10, 25, "REGISTRATION", font), {'fill': 'white'}),
                 ('text', (10, 40, "MODE", font), {'fill': 'white'}),
-                ('text', (10, 60, "CENTER: Scan UID", font), {'fill': 'cyan'}),
+                ('text', (10, 60, "RIGHT: Scan UID", font), {'fill': 'cyan'}),
                 ('text', (10, 75, "BACK: Exit to Menu", font), {'fill': 'blue'}),
                 ('text', (10, 95, "Ready to register", font), {'fill': 'white'})
             ]
