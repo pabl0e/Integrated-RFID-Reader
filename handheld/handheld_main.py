@@ -17,6 +17,9 @@ from handheld_db_module import store_evidence, check_uid, add_new_uid
 # DFR0528 UPS HAT Battery Reading
 UPS_AVAILABLE = False
 UPS_I2C_ADDRESS = 0x10  # DFR0528 I2C address
+UPS_SOC_LSB = 0.003906  # LSB for State of Charge (0.003906% per bit)
+UPS_VOLTAGE_LSB = 1.25  # LSB for Voltage (1.25mV per bit)
+UPS_CHARGING_THRESHOLD = 4150  # Voltage threshold (mV) to detect charging
 try:
     import smbus
     # Test connection
@@ -50,9 +53,9 @@ def get_battery_level():
         soc_high = bus.read_byte_data(UPS_I2C_ADDRESS, 0x05)
         soc_low = bus.read_byte_data(UPS_I2C_ADDRESS, 0x06)
         
-        # Calculate percentage: (high << 8 | low) * 0.003906
+        # Calculate percentage: (high << 8 | low) * LSB
         raw_soc = (soc_high << 8) | soc_low
-        percentage = int(raw_soc * 0.003906)
+        percentage = int(raw_soc * UPS_SOC_LSB)
         
         # Clamp to valid range
         if percentage > 100:
@@ -90,9 +93,9 @@ def get_battery_voltage():
         v_high = bus.read_byte_data(UPS_I2C_ADDRESS, 0x03)
         v_low = bus.read_byte_data(UPS_I2C_ADDRESS, 0x04)
         
-        # Calculate voltage: (high << 8 | low) * 1.25 mV
+        # Calculate voltage: (high << 8 | low) * LSB mV
         raw_voltage = (v_high << 8) | v_low
-        voltage_mv = int(raw_voltage * 1.25)
+        voltage_mv = int(raw_voltage * UPS_VOLTAGE_LSB)
         
         return voltage_mv
     except Exception as e:
@@ -108,13 +111,12 @@ def get_battery_voltage():
 def is_charging():
     """
     Detect if the UPS HAT is charging.
-    Charging is detected when voltage > 4150mV (typical charging voltage).
+    Charging is detected when voltage exceeds the charging threshold.
     """
     voltage = get_battery_voltage()
     if voltage < 0:
         return False
-    # Li-ion charges above 4.15V typically
-    return voltage > 4150
+    return voltage > UPS_CHARGING_THRESHOLD
 
 def get_battery_icon(level):
     """Return a text icon based on battery level"""
