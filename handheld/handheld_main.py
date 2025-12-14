@@ -442,9 +442,9 @@ def run_photo_capture(picam2):
                 ('text', (10, 10, "PHOTO CAPTURE", font), {'fill': 'white'}),
                 ('text', (10, 30, "Aim camera at", font), {'fill': 'cyan'}),
                 ('text', (10, 45, "the violation", font), {'fill': 'cyan'}),
-                ('text', (10, 65, "CENTER: Capture", font), {'fill': 'green'}),
-                ('text', (10, 80, "BACK: Cancel", font), {'fill': 'red'}),
-                ('text', (10, 100, "Ready...", font), {'fill': 'yellow'})
+                ('text', (10, 65, "CENTER: Capture", font), {'fill': 'cyan'}),  # Shows as yellow on BGR
+                ('text', (10, 80, "BACK: Cancel", font), {'fill': 'blue'}),  # Shows as red on BGR
+                ('text', (10, 100, "Ready...", font), {'fill': 'green'})
             ]
             if OLED_AVAILABLE:
                 Clear_Screen()
