@@ -19,7 +19,7 @@ UPS_AVAILABLE = False
 UPS_I2C_ADDRESS = 0x10  # DFR0528 I2C address
 UPS_SOC_LSB = 0.003906  # LSB for State of Charge (0.003906% per bit)
 UPS_VOLTAGE_LSB = 1.25  # LSB for Voltage (1.25mV per bit)
-UPS_CHARGING_THRESHOLD = 4150  # Voltage threshold (mV) to detect charging
+UPS_CHARGING_THRESHOLD = 4000  # Voltage threshold (mV) to detect charging
 try:
     import smbus
     # Test connection
