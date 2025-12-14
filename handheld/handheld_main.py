@@ -440,8 +440,8 @@ def run_photo_capture(picam2):
         def draw_ready_to_capture_screen():
             elements_to_draw = [
                 ('text', (10, 10, "PHOTO CAPTURE", font), {'fill': 'white'}),
-                ('text', (10, 30, "Aim camera at", font), {'fill': 'cyan'}),
-                ('text', (10, 45, "the violation", font), {'fill': 'cyan'}),
+                ('text', (10, 30, "Aim camera at", font), {'fill': 'orange'}),
+                ('text', (10, 45, "the violation", font), {'fill': 'orange'}),
                 ('text', (10, 65, "RIGHT: Capture", font), {'fill': 'cyan'}),  # Shows as yellow on BGR
                 ('text', (10, 80, "LEFT: Cancel", font), {'fill': 'blue'}),  # Shows as red on BGR
                 ('text', (10, 100, "Ready...", font), {'fill': 'green'})
@@ -650,8 +650,8 @@ def run_violation_selector():
         
         # Only TWO violation types for the entire project
         violations = [
-            "Parking in No Parking Zones",
-            "Unauthorized Parking in designated Parking spots"
+            "Parking in\nNo Parking Zones",
+            "Unauthorized Parking\nin designated spots"
         ]
         selected_index = 0
         
@@ -663,40 +663,32 @@ def run_violation_selector():
         def draw_menu():
             """Draw the violation selection menu"""
             elements_to_draw = []
-            elements_to_draw.append(('text', (5, 5, "SELECT VIOLATION:", font), {'fill': 'white'}))
+            elements_to_draw.append(('text', (5, 2, "SELECT VIOLATION:", font), {'fill': 'white'}))
             
-            # Draw both violation options
+            # Draw both violation options with proper spacing
+            # Option 1 starts at y=18, Option 2 starts at y=55
+            y_positions = [18, 55]
+            
             for i, violation in enumerate(violations):
-                y_pos = 25 + (i * 20)
+                y_pos = y_positions[i]
+                lines = violation.split('\n')
                 
                 if i == selected_index:
-                    # Highlight selected option
-                    elements_to_draw.append(('rectangle', (3, y_pos - 2, 125, 18), {'fill': 'yellow'}))
-                    # Split long text for display
-                    if len(violation) > 20:
-                        lines = violation.split()
-                        mid = len(lines) // 2
-                        line1 = " ".join(lines[:mid])
-                        line2 = " ".join(lines[mid:])
-                        elements_to_draw.append(('text', (5, y_pos, line1[:18], font), {'fill': 'black'}))
-                        elements_to_draw.append(('text', (5, y_pos + 10, line2[:18], font), {'fill': 'black'}))
-                    else:
-                        elements_to_draw.append(('text', (5, y_pos, violation[:20], font), {'fill': 'black'}))
+                    # Highlight selected option with taller rectangle
+                    elements_to_draw.append(('rectangle', (3, y_pos - 2, 122, 28), {'fill': 'yellow'}))
+                    # Draw both lines
+                    elements_to_draw.append(('text', (5, y_pos, lines[0], font), {'fill': 'black'}))
+                    if len(lines) > 1:
+                        elements_to_draw.append(('text', (5, y_pos + 12, lines[1], font), {'fill': 'black'}))
                 else:
-                    # Split long text for display
-                    if len(violation) > 20:
-                        lines = violation.split()
-                        mid = len(lines) // 2
-                        line1 = " ".join(lines[:mid])
-                        line2 = " ".join(lines[mid:])
-                        elements_to_draw.append(('text', (5, y_pos, line1[:18], font), {'fill': 'white'}))
-                        elements_to_draw.append(('text', (5, y_pos + 10, line2[:18], font), {'fill': 'white'}))
-                    else:
-                        elements_to_draw.append(('text', (5, y_pos, violation[:20], font), {'fill': 'white'}))
+                    # Draw both lines
+                    elements_to_draw.append(('text', (5, y_pos, lines[0], font), {'fill': 'white'}))
+                    if len(lines) > 1:
+                        elements_to_draw.append(('text', (5, y_pos + 12, lines[1], font), {'fill': 'white'}))
             
-            # Draw instructions
-            elements_to_draw.append(('text', (5, 90, "UP/DOWN: Navigate", font), {'fill': 'cyan'}))
-            elements_to_draw.append(('text', (5, 105, "RIGHT: Select", font), {'fill': 'cyan'}))
+            # Draw instructions at bottom
+            elements_to_draw.append(('text', (5, 92, "UP/DOWN: Navigate", font), {'fill': 'cyan'}))
+            elements_to_draw.append(('text', (5, 107, "RIGHT: Select", font), {'fill': 'cyan'}))
             
             if OLED_AVAILABLE:
                 Clear_Screen()
