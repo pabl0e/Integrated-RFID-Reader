@@ -262,7 +262,15 @@ def show_main_menu_with_camera():
         if GPIO_AVAILABLE:
             print("Press CENTER to start enforcement, BACK for UID registration, UP+DOWN to exit")
             
+            last_refresh = time.time()
+            REFRESH_INTERVAL = 5  # Refresh battery display every 5 seconds
+            
             while True:
+                # Periodically refresh display to update battery status
+                if time.time() - last_refresh >= REFRESH_INTERVAL:
+                    draw_main_menu()
+                    last_refresh = time.time()
+                
                 # Read button states
                 center_state = GPIO.input(CENTER_PIN)
                 back_state = GPIO.input(BACK_PIN)
