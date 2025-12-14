@@ -41,6 +41,7 @@ def get_battery_level():
     if not UPS_AVAILABLE:
         return -1
     
+    bus = None
     try:
         # Create fresh bus connection each time to get updated readings
         bus = smbus.SMBus(1)
@@ -48,8 +49,6 @@ def get_battery_level():
         # Read SOC (State of Charge) registers
         soc_high = bus.read_byte_data(UPS_I2C_ADDRESS, 0x05)
         soc_low = bus.read_byte_data(UPS_I2C_ADDRESS, 0x06)
-        
-        bus.close()
         
         # Calculate percentage: (high << 8 | low) * 0.003906
         raw_soc = (soc_high << 8) | soc_low
@@ -65,6 +64,12 @@ def get_battery_level():
     except Exception as e:
         print(f"Battery read error: {e}")
         return -1
+    finally:
+        if bus:
+            try:
+                bus.close()
+            except:
+                pass
 
 def get_battery_voltage():
     """
@@ -77,14 +82,13 @@ def get_battery_voltage():
     if not UPS_AVAILABLE:
         return -1
     
+    bus = None
     try:
         bus = smbus.SMBus(1)
         
         # Read voltage registers
         v_high = bus.read_byte_data(UPS_I2C_ADDRESS, 0x03)
         v_low = bus.read_byte_data(UPS_I2C_ADDRESS, 0x04)
-        
-        bus.close()
         
         # Calculate voltage: (high << 8 | low) * 1.25 mV
         raw_voltage = (v_high << 8) | v_low
@@ -94,6 +98,12 @@ def get_battery_voltage():
     except Exception as e:
         print(f"Voltage read error: {e}")
         return -1
+    finally:
+        if bus:
+            try:
+                bus.close()
+            except:
+                pass
 
 def is_charging():
     """
@@ -170,7 +180,7 @@ def show_main_menu_with_camera():
         
         try:
             font = ImageFont.load_default()
-        except Exception:
+        except Exception:   
             font = None
         
         # Try to import GPIO for button handling
