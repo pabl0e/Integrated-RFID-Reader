@@ -244,7 +244,7 @@ def show_main_menu_with_camera():
                 ('text', (10, 18, "VIOLATIONS", font), {'fill': 'white'}),
                 ('text', (10, 31, "ENFORCEMENT", font), {'fill': 'white'}),
                 ('text', (10, 48, "RIGHT: Start", font), {'fill': 'cyan'}),
-                ('text', (10, 61, "BACK: UID Reg", font), {'fill': 'blue'}),
+                ('text', (10, 61, "LEFT: UID Reg", font), {'fill': 'blue'}),
                 ('text', (10, 74, "UP+DOWN: Exit", font), {'fill': 'red'}),
                 ('text', (10, 90, battery_text, font), {'fill': battery_color}),
                 ('text', (10, 105, "Ready!", font), {'fill': 'white'})
@@ -443,7 +443,7 @@ def run_photo_capture(picam2):
                 ('text', (10, 30, "Aim camera at", font), {'fill': 'cyan'}),
                 ('text', (10, 45, "the violation", font), {'fill': 'cyan'}),
                 ('text', (10, 65, "RIGHT: Capture", font), {'fill': 'cyan'}),  # Shows as yellow on BGR
-                ('text', (10, 80, "BACK: Cancel", font), {'fill': 'blue'}),  # Shows as red on BGR
+                ('text', (10, 80, "LEFT: Cancel", font), {'fill': 'blue'}),  # Shows as red on BGR
                 ('text', (10, 100, "Ready...", font), {'fill': 'green'})
             ]
             if OLED_AVAILABLE:
@@ -829,7 +829,7 @@ def run_uid_registration():
                 ('text', (10, 25, "REGISTRATION", font), {'fill': 'white'}),
                 ('text', (10, 40, "MODE", font), {'fill': 'white'}),
                 ('text', (10, 60, "RIGHT: Scan UID", font), {'fill': 'cyan'}),
-                ('text', (10, 75, "BACK: Exit to Menu", font), {'fill': 'blue'}),
+                ('text', (10, 75, "LEFT: Exit to Menu", font), {'fill': 'blue'}),
                 ('text', (10, 95, "Ready to register", font), {'fill': 'white'})
             ]
             
