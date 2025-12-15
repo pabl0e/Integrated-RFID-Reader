@@ -277,7 +277,7 @@ def sync_violations(batch_size: int = 300, insert_ignore: bool = True) -> dict:
                         (vehicle_id, violation_type_id, description, location, reported_by, 
                          status, created_at, updated_at, image_data, image_filename, 
                          image_mime_type, contest_status)
-                        VALUES (%s, %s, %s, %s, %s, 'resolved', %s, %s, %s, %s, 'image/jpeg', NULL)
+                        VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, 'image/jpeg', NULL)
                     """
                     
                     ts = row.get('violation_timestamp')

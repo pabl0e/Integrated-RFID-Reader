@@ -687,14 +687,14 @@ def run_violation_selector():
                         elements_to_draw.append(('text', (5, y_pos + 12, lines[1], font), {'fill': 'white'}))
             
             # Draw instructions at bottom
-            elements_to_draw.append(('text', (5, 92, "UP/DOWN: Navigate", font), {'fill': 'cyan'}))
+            elements_to_draw.append(('text', (5, 92, "UP/DOWN: Navigate", font), {'fill': 'red'}))
             elements_to_draw.append(('text', (5, 107, "RIGHT: Select", font), {'fill': 'cyan'}))
             
             if OLED_AVAILABLE:
                 Clear_Screen()
                 Draw_All_Elements(elements_to_draw)
             else:
-                Draw_All_Elements(elements_to_draw)
+                Draw_All_Elements(elements_to_draw) 
         
         # Main selection loop
         print("Available violations:")
