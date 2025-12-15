@@ -506,7 +506,7 @@ def run_photo_capture(picam2):
         evidences_dir = os.path.join(base_dir, "evidences")
         os.makedirs(evidences_dir, exist_ok=True)
         
-        # 3. Generate filename
+        # 3. Generate initial filename (will be regenerated in loop for retakes)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         photo_filename = f"evidence_{timestamp}.jpg"
         
@@ -517,27 +517,20 @@ def run_photo_capture(picam2):
         # This is what goes into the DB so the sync script can reconstruct it later
         db_photo_path = os.path.join("evidences", photo_filename)
         
-        # Show photo preview screen
-        def draw_photo_preview_screen(path_to_display):
-            try:
-                if OLED_AVAILABLE and os.path.exists(path_to_display):
-                    print(f"Displaying captured photo: {path_to_display}")
-                    Clear_Screen()
-                    try:
-                        from PIL import Image
-                        captured_image = Image.open(path_to_display)
-                        Display_Image(captured_image)
-                    except Exception as load_error:
-                        print(f"Could not load image: {load_error}")
-                else:
-                    elements_to_draw = [
-                        ('text', (10, 20, "PHOTO PREVIEW", font), {'fill': 'white'}),
-                        ('text', (15, 40, "Image captured", font), {'fill': 'green'}),
-                        ('text', (10, 60, "Saved OK", font), {'fill': 'green'})
-                    ]
-                    Draw_All_Elements(elements_to_draw)
-            except Exception as img_error:
-                print(f"Image preview error: {img_error}")
+        # Show photo preview screen with options
+        def draw_photo_preview_with_options():
+            elements_to_draw = [
+                ('text', (10, 5, "PHOTO PREVIEW", font), {'fill': 'white'}),
+                ('text', (10, 25, "Photo captured!", font), {'fill': 'green'}),
+                ('text', (10, 50, "RIGHT: Use Photo", font), {'fill': 'cyan'}),  # Shows as yellow
+                ('text', (10, 65, "LEFT: Retake", font), {'fill': 'blue'}),  # Shows as red
+                ('text', (10, 90, "Choose option...", font), {'fill': 'white'})
+            ]
+            if OLED_AVAILABLE:
+                Clear_Screen()
+                Draw_All_Elements(elements_to_draw)
+            else:
+                Draw_All_Elements(elements_to_draw)
 
         # Show failed screen
         def draw_photo_failed_screen():
@@ -552,38 +545,102 @@ def run_photo_capture(picam2):
             else:
                 Draw_All_Elements(elements_to_draw)
 
-        # CAPTURE LOGIC
-        if picam2 and CAMERA_AVAILABLE:
-            try:
-                time.sleep(1)
-                # Save to the ABSOLUTE path
-                picam2.capture_file(full_photo_path)
-                print(f"Photo captured to: {full_photo_path}")
-                
-                # Rotate the image 90 degrees clockwise to correct orientation
+        # CAPTURE LOGIC - Loop to allow retake
+        while True:
+            if picam2 and CAMERA_AVAILABLE:
                 try:
-                    from PIL import Image
-                    img = Image.open(full_photo_path)
-                    img_rotated = img.rotate(90, expand=True)
-                    img_rotated.save(full_photo_path)
-                    print("Image rotated 90° clockwise for correct orientation")
-                except Exception as rotate_error:
-                    print(f"Image rotation failed (using original): {rotate_error}")
-                
-                draw_photo_preview_screen(full_photo_path)
-                time.sleep(3)
-                
-                # Return True and the RELATIVE path for the DB
-                return True, db_photo_path
-            except Exception as e:
-                print(f"Camera capture failed: {e}")
+                    # Generate new filename for each capture attempt
+                    timestamp = time.strftime("%Y%m%d_%H%M%S")
+                    photo_filename = f"evidence_{timestamp}.jpg"
+                    full_photo_path = os.path.join(evidences_dir, photo_filename)
+                    db_photo_path = os.path.join("evidences", photo_filename)
+                    
+                    time.sleep(1)
+                    # Save to the ABSOLUTE path
+                    picam2.capture_file(full_photo_path)
+                    print(f"Photo captured to: {full_photo_path}")
+                    
+                    # Rotate the image 90 degrees clockwise to correct orientation
+                    try:
+                        from PIL import Image
+                        img = Image.open(full_photo_path)
+                        img_rotated = img.rotate(90, expand=True)
+                        img_rotated.save(full_photo_path)
+                        print("Image rotated 90° clockwise for correct orientation")
+                    except Exception as rotate_error:
+                        print(f"Image rotation failed (using original): {rotate_error}")
+                    
+                    # Show preview image briefly
+                    if OLED_AVAILABLE and os.path.exists(full_photo_path):
+                        try:
+                            from PIL import Image
+                            captured_image = Image.open(full_photo_path)
+                            Clear_Screen()
+                            Display_Image(captured_image)
+                            time.sleep(2)  # Show preview for 2 seconds
+                        except Exception as load_error:
+                            print(f"Could not load image: {load_error}")
+                    
+                    # Show options: Use Photo or Retake
+                    draw_photo_preview_with_options()
+                    
+                    if GPIO_AVAILABLE:
+                        print("Press RIGHT to use photo, LEFT to retake")
+                        while True:
+                            center_state = GPIO.input(CENTER_PIN)
+                            back_state = GPIO.input(BACK_PIN)
+                            
+                            if center_state == GPIO.HIGH:
+                                print("RIGHT button pressed - Using photo")
+                                time.sleep(0.3)  # Debounce
+                                return True, db_photo_path
+                            
+                            elif back_state == GPIO.HIGH:
+                                print("LEFT button pressed - Retaking photo")
+                                time.sleep(0.3)  # Debounce
+                                # Delete the old photo
+                                try:
+                                    os.remove(full_photo_path)
+                                except:
+                                    pass
+                                # Show ready screen again
+                                draw_ready_to_capture_screen()
+                                # Wait for capture button
+                                while True:
+                                    if GPIO.input(CENTER_PIN) == GPIO.HIGH:
+                                        time.sleep(0.3)
+                                        break
+                                    if GPIO.input(BACK_PIN) == GPIO.HIGH:
+                                        time.sleep(0.3)
+                                        return False, None
+                                    time.sleep(0.1)
+                                break  # Break to outer while to retake
+                            
+                            time.sleep(0.1)
+                    else:
+                        # Keyboard fallback
+                        print("Press Enter to use photo, 'r' to retake:")
+                        user_input = input().strip().lower()
+                        if user_input == 'r':
+                            try:
+                                os.remove(full_photo_path)
+                            except:
+                                pass
+                            continue  # Retake
+                        else:
+                            return True, db_photo_path
+                            
+                except Exception as e:
+                    print(f"Camera capture failed: {e}")
+                    draw_photo_failed_screen()
+                    time.sleep(2)
+                    break
+            else:
+                # Mock camera logic
+                time.sleep(1)
                 draw_photo_failed_screen()
-                time.sleep(2)
-        else:
-            # Mock camera logic
-            time.sleep(1)
-            draw_photo_failed_screen()
-            time.sleep(1)
+                time.sleep(1)
+                break
         
         # Fallback / Mock file creation
         try:
