@@ -1281,29 +1281,16 @@ def main():
         
         print(f"Violation selected: {selected_violation}")
         
-        # Step 4: Store in violations table with all required fields
+        # Step 4: Store violation with authenticated user
         print("Step 4: Recording violation in database...")
-        
-        # Show storing message
-        elements_to_draw = [
-            ('text', (10, 20, "RECORDING", font), {'fill': 'yellow'}),
-            ('text', (10, 35, "PARKING", font), {'fill': 'yellow'}),
-            ('text', (10, 50, "VIOLATION", font), {'fill': 'yellow'}),
-            ('text', (10, 70, "Please wait...", font), {'fill': 'white'})
-        ]
-        if OLED_AVAILABLE:
-            Clear_Screen()
-            Draw_All_Elements(elements_to_draw)
-        else:
-            Draw_All_Elements(elements_to_draw)
-        
-        # Store violation with all required fields for handheld Pi
         result = store_evidence(
-            rfid_uid=scanned_uid,          # Required: RFID tag UID
-            photo_path=photo_path,         # Required: Evidence photo path
-            violation_type=selected_violation,  # Required: One of 2 violation types
-            location="Campus Parking Area",     # Required: Location info
-            device_id="HANDHELD_01"            # Required: Device identifier
+            rfid_uid=scanned_uid,
+            photo_path=photo_path,
+            violation_type=selected_violation,
+            timestamp=datetime.datetime.now(),
+            location="Campus Parking Area",
+            device_id="HANDHELD_01",
+            reported_by=CURRENT_USER_ID  # Pass authenticated user ID
         )
         
         if result["ok"]:
