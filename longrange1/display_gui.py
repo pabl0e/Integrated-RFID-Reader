@@ -1,9 +1,8 @@
 import tkinter as tk
 from tkinter import font as tkfont
 import sys
-from PIL import Image, ImageTk
-import io
 from PIL import Image, ImageTk, ImageDraw
+import io
 
 class CarInfoDisplay:
     def __init__(self):
@@ -29,6 +28,7 @@ class CarInfoDisplay:
         self.license_plate_var = tk.StringVar(value='')
 
         self.sticker_status_label = None
+        self.access_label = None  # <--- New label for SUCCESS/FAIL
         self._profile_photo = None
 
         self.create_widgets()
@@ -59,13 +59,16 @@ class CarInfoDisplay:
         self.label_font  = ('Arial', 39, 'bold')
         self.value_font  = ('Arial', 41, 'normal')
         self.status_font = ('Arial', 45, 'bold')
+        
+        # New font for the bottom access message
+        self.access_font = ('Arial', 65, 'bold') 
 
         self.bg_color        = '#ffffff'
         self.title_color     = '#355E3B'
         self.label_color     = '#355E3B'
         self.value_color     = '#355E3B'
-        self.registered_color   = '#00ff00'
-        self.unregistered_color = '#ff0000'
+        self.registered_color   = '#4CBB17' # Bright Green
+        self.unregistered_color = '#ff0000' # Bright Red
 
     # ---------- layout ----------
     def create_widgets(self):
@@ -81,10 +84,12 @@ class CarInfoDisplay:
         self.main.grid_columnconfigure(0, weight=1, minsize=self.left_col_w)
         self.main.grid_columnconfigure(1, weight=1)
         self.main.grid_columnconfigure(2, weight=2)
-        for r in range(9):
+        
+        # Configure rows: 0-8 for data, 9 (spacer), 10 for Access Message
+        for r in range(11):
             self.main.grid_rowconfigure(r, weight=1)
 
-        # Left: profile picture
+        # Left: profile picture (rowspan 9 covers the data fields)
         self.profile_image_label = tk.Label(self.main, bg=self.bg_color, bd=1, relief='solid')
         self.profile_image_label.grid(row=0, column=0, rowspan=9, sticky='nsew', padx=(0, 30))
 
@@ -106,6 +111,19 @@ class CarInfoDisplay:
         self.create_info_row(self.main, 6, "Color:",         self.color_var)
         self.create_info_row(self.main, 7, "Vehicle Type:",  self.vehicle_type_var)
         self.create_info_row(self.main, 8, "License Plate:", self.license_plate_var)
+
+        # --- NEW: Access Grant/Deny Label at Bottom ---
+        # Spanning all 3 columns to center it relative to the whole screen
+        self.access_label = tk.Label(
+            self.main, 
+            text="WAITING FOR SCAN...", 
+            font=self.access_font,
+            fg=self.value_color, 
+            bg=self.bg_color, 
+            anchor='center'
+        )
+        self.access_label.grid(row=10, column=0, columnspan=3, sticky='ew', pady=(20, 0))
+
 
     def create_info_row(self, parent, row, label_text, textvariable, is_status=False):
         lab = tk.Label(parent, text=label_text, font=self.label_font,
@@ -130,10 +148,7 @@ class CarInfoDisplay:
     # ---------- title auto-fit ----------
     def fit_title_to_width(self):
         """Shrink the title font until it fits the middle+right columns width."""
-        # Ensure geometry is updated
         self.root.update_idletasks()
-
-        # Available width = total window - (outer pads + left column + inner gap + right pad)
         total_w = self.root.winfo_width() or 1920
         available = total_w - (2*self.pad + self.left_col_w + 30 + self.pad)
         if available <= 0:
@@ -148,7 +163,6 @@ class CarInfoDisplay:
         self.title_label.configure(font=(self.title_family, size, 'bold'))
 
     def on_resize(self, _event):
-        # Debounce rapid resize events
         if self._resize_job is not None:
             self.root.after_cancel(self._resize_job)
         self._resize_job = self.root.after(120, self.fit_title_to_width)
@@ -167,20 +181,16 @@ class CarInfoDisplay:
             self.sticker_status_label.config(fg=self.value_color)
 
     def update_profile_picture(self, image_obj):
-        """
-        Accepts a pre-processed PIL Image object (not bytes).
-        Converts it directly to ImageTk for display.
-        """
         if image_obj:
             self._profile_photo = ImageTk.PhotoImage(image_obj)
         else:
-            # Fallback: Create a blank white placeholder (very fast)
             img = Image.new('RGB', (500, 900), 'white')
             self._profile_photo = ImageTk.PhotoImage(img)
 
         self.profile_image_label.config(image=self._profile_photo)
 
     def update_car_info(self, new_data, profile_picture_bytes=None):
+        # 1. Update variables
         if 'sticker_status' in new_data:
             self.sticker_status_var.set(new_data['sticker_status'])
             self.update_status_color(new_data['sticker_status'])
@@ -199,8 +209,25 @@ class CarInfoDisplay:
         if 'license_plate' in new_data:
             self.license_plate_var.set(new_data['license_plate'])
 
-        # refresh image (None blanks it)
+        # 2. Refresh image
         self.update_profile_picture(profile_picture_bytes)
+
+        # 3. --- UPDATE ACCESS LABEL (GRANT/DENY) ---
+        # Get raw status text
+        raw_status = new_data.get('sticker_status', '').strip().lower()
+
+        # Check conditions: "renewed" or "active" => SUCCESS
+        if raw_status in ['renewed', 'active']:
+            self.access_label.config(
+                text="SUCCESS - GRANT ACCESS", 
+                fg=self.registered_color  # Green
+            )
+        else:
+            # All other statuses (expired, N/A, empty, stolen, etc) => FAIL
+            self.access_label.config(
+                text="FAIL - DENY ACCESS", 
+                fg=self.unregistered_color  # Red
+            )
 
         # re-fit title in case DPI/geometry changed
         self.fit_title_to_width()
@@ -221,9 +248,7 @@ class CarInfoDisplay:
         """Draw a large red X and display it on the left panel."""
         img = Image.new('RGB', (w, h), 'white')
         d = ImageDraw.Draw(img)
-        # two diagonals
         d.line((0, 0, w, h), fill=(255, 0, 0), width=thickness)
         d.line((0, h, w, 0), fill=(255, 0, 0), width=thickness)
         self._profile_photo = ImageTk.PhotoImage(img)
         self.profile_image_label.config(image=self._profile_photo)
-        

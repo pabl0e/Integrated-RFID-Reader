@@ -12,7 +12,7 @@ try:
         pool_name="rfid_pool",
         pool_size=3,  # Start with 3, can increase to 5 if needed
         #host='192.168.50.238',
-        host='192.168.1.11',
+        host='10.56.87.248',
         user='jicmugot16',
         password='melonbruh123',
         database='rfid_vehicle_system',
@@ -27,7 +27,7 @@ except Error as e:
 TAG_CACHE_TTL = 300.0  # seconds (UID TTL cache time)
 _tag_cache = {}        # {uid: (timestamp, {'data':..., 'photo':...})}
 
-RED_X_IMAGE_PATH = "/home/jicmugot16/longrange1/Red_X.jpg"
+RED_X_IMAGE_PATH = "/home/jicmugot16/longrange2/Red_X.jpg"
 
 def process_image_data(image_data):
     """Takes raw bytes, opens, and resizes them to 500x900."""
@@ -111,7 +111,7 @@ def check_uid(read_uid, display):
         cursor = conn.cursor()
         query = """
             SELECT
-                t.status,
+                v.sticker_status,
                 v.usc_id,
                 v.vehicle_id,
                 COALESCE(up.full_name, ''),
@@ -138,11 +138,11 @@ def check_uid(read_uid, display):
             return {'data': empty_data, 'photo': _RED_X_IMG}
 
         # --- MATCH FOUND
-        (status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type,
+        (sticker_status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type,
          plate_number, blob, file_type) = result
 
         data = {
-            'sticker_status': status,
+            'sticker_status': sticker_status,
             'usc_id': str(usc_id),
             'vehicle_id': vehicle_id,
             'student_name': full_name,
@@ -154,7 +154,7 @@ def check_uid(read_uid, display):
         }
 
         # ... inside the MATCH FOUND section ...
-        (status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type,
+        (sticker_status, usc_id, vehicle_id, full_name, make, model, color, vehicle_type,
          plate_number, blob, file_type) = result
 
         # REPLACE the old photo logic with this:
