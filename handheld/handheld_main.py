@@ -279,9 +279,32 @@ def show_main_menu_with_camera():
                 
                 # Check for exit combination (UP + DOWN)
                 if up_state == GPIO.HIGH and down_state == GPIO.HIGH:
-                    print("UP+DOWN buttons pressed - Exiting system")
-                    time.sleep(0.5)  # Debounce
-                    return picam2, False
+                    print("UP+DOWN pressed - Logging out")
+                    time.sleep(0.5)
+                    
+                    # Show logout screen
+                    logout_elements = [
+                        ('text', (10, 40, "LOGGING OUT", font), {'fill': 'yellow'}),
+                        ('text', (10, 70, "Goodbye!", font), {'fill': 'white'})
+                    ]
+                    if OLED_AVAILABLE:
+                        Clear_Screen()
+                        Draw_All_Elements(logout_elements)
+                    time.sleep(2)
+                    
+                    # Clear user session
+                    global CURRENT_USER_ID, CURRENT_USER_NAME, CURRENT_USER_ROLE
+                    CURRENT_USER_ID = None
+                    CURRENT_USER_NAME = None
+                    CURRENT_USER_ROLE = None
+                    
+                    # Signal to restart authentication
+                    if picam2:
+                        try:
+                            picam2.stop()
+                        except:
+                            pass
+                    return None, False  # Return False to trigger re-authentication
                 
                 elif center_state == GPIO.HIGH:
                     print("CENTER button pressed - Starting enforcement!")
