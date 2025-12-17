@@ -39,7 +39,7 @@ def connect_localdb():
         print("Database connection error:", e)
         return None
 
-def store_evidence(rfid_uid, photo_path, violation_type, timestamp=None, location=None, device_id="HANDHELD_01"):
+def store_evidence(rfid_uid, photo_path, violation_type, timestamp=None, location=None, device_id="HANDHELD_01", reported_by=None):
     """
     Store violation record in the violations table.
     Falls back to JSON file storage if database connection fails.
@@ -51,6 +51,7 @@ def store_evidence(rfid_uid, photo_path, violation_type, timestamp=None, locatio
         timestamp: Optional timestamp (uses current time if None)
         location: Optional location info
         device_id: Device identifier for tracking
+        reported_by: User ID of the officer recording the violation
         
     Returns:
         dict: Success status and violation ID if successful
@@ -58,6 +59,10 @@ def store_evidence(rfid_uid, photo_path, violation_type, timestamp=None, locatio
     # Use current timestamp if not provided
     if timestamp is None:
         timestamp = datetime.datetime.now()
+    
+    # Use reported_by if provided, otherwise default to 1
+    if reported_by is None:
+        reported_by = 1  # Default user ID for backward compatibility
     
     # Try database storage first
     conn = connect_localdb()
@@ -71,9 +76,6 @@ def store_evidence(rfid_uid, photo_path, violation_type, timestamp=None, locatio
                 (rfid_uid, photo_path, violation_type, violation_timestamp, location, device_id, reported_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
-            
-            # Use device_id as reported_by for now, or 1 as default user
-            reported_by = 1  # Default user ID for handheld device
             
             cursor.execute(insert_query, (rfid_uid, photo_path, violation_type, timestamp, location, device_id, reported_by))
             conn.commit()
