@@ -377,3 +377,154 @@ def add_new_uid(read_uid: str) -> dict:
         except Exception:
             pass
         conn.close()
+
+
+# ============================================================================
+# PIN AUTHENTICATION FUNCTIONS
+# ============================================================================
+
+def get_local_cache_path():
+    """Get path to local authentication cache file"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    cache_dir = os.path.join(base_dir, "auth_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, "authenticated_users.json")
+
+def load_auth_cache():
+    """Load cached authenticated users from local file"""
+    cache_path = get_local_cache_path()
+    try:
+        if os.path.exists(cache_path):
+            with open(cache_path, 'r') as f:
+                cache_data = json.load(f)
+                return cache_data.get('users', [])
+    except Exception as e:
+        print(f"Error loading auth cache: {e}")
+    return []
+
+def save_auth_cache(users):
+    """
+    Save authenticated users to local cache.
+    Keeps only last 5 users.
+    """
+    cache_path = get_local_cache_path()
+    try:
+        # Keep only last 5 users
+        users_to_save = users[-5:] if len(users) > 5 else users
+        
+        cache_data = {
+            'users': users_to_save,
+            'last_updated': datetime.datetime.now().isoformat()
+        }
+        
+        with open(cache_path, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        print(f"Auth cache updated with {len(users_to_save)} users")
+    except Exception as e:
+        print(f"Error saving auth cache: {e}")
+
+def authenticate_user_by_pin(pin):
+    """
+    Authenticate user by PIN code.
+    Tries main database first, falls back to local cache if offline.
+    Only allows Admin and Security designations.
+    Admin override PIN "0000" is supported.
+    
+    Args:
+        pin: 4-digit PIN string
+        
+    Returns:
+        dict: User record {user_id, full_name, designation, email} if valid, None if invalid
+    """
+    # Check for admin override PIN
+    if pin == "0000":
+        print("Admin override PIN detected")
+        return {
+            'user_id': 999,
+            'full_name': 'Admin Override',
+            'designation': 'Admin',
+            'email': 'admin@override',
+            'usc_id': '00000000',
+            'auth_method': 'override'
+        }
+    
+    # Try main database first
+    conn = connect_maindb()
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            
+            # Query users table for matching PIN with active status
+            # Only allow Admin and Security designations
+            # Using actual column names: id, usc_id, email, designation, status
+            query = """
+                SELECT id, usc_id, email, designation 
+                FROM users 
+                WHERE pin = %s 
+                AND status = 'active'
+                AND designation IN ('Admin', 'Security')
+            """
+            
+            cursor.execute(query, (pin,))
+            user = cursor.fetchone()
+            
+            if user:
+                # Map database columns to expected format
+                user_record = {
+                    'user_id': user['id'],
+                    'full_name': user['usc_id'],  # Using USC ID as display name
+                    'designation': user['designation'],
+                    'email': user['email'],
+                    'usc_id': user['usc_id'],
+                    'auth_method': 'database'
+                }
+                
+                print(f"User authenticated: {user_record['full_name']} ({user_record['designation']})")
+                
+                # Update cache with this user
+                cache = load_auth_cache()
+                
+                # Check if user already in cache, remove old entry
+                cache = [u for u in cache if u['user_id'] != user_record['user_id']]
+                
+                # Add user to cache with PIN for offline validation
+                cache.append({
+                    'user_id': user_record['user_id'],
+                    'full_name': user_record['full_name'],
+                    'designation': user_record['designation'],
+                    'email': user_record['email'],
+                    'usc_id': user_record['usc_id'],
+                    'pin': pin  # Store PIN for offline validation
+                })
+                
+                save_auth_cache(cache)
+                
+                return user_record
+            else:
+                print("PIN not found or user not authorized (Admin/Security only)")
+                return None
+                
+        except Error as e:
+            print(f"Database authentication error: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+    
+    # Fallback to local cache if database unavailable
+    print("Database unavailable, checking local cache...")
+    cache = load_auth_cache()
+    
+    for user in cache:
+        if user.get('pin') == pin:
+            print(f"User authenticated from cache: {user['full_name']}")
+            return {
+                'user_id': user['user_id'],
+                'full_name': user['full_name'],
+                'designation': user['designation'],
+                'email': user['email'],
+                'usc_id': user['usc_id'],
+                'auth_method': 'cache'
+            }
+    
+    print("PIN not found in cache")
+    return None

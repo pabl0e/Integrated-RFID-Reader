@@ -14,6 +14,11 @@ from PIL import ImageFont
 from handheld_rfid_module import scan_rfid_for_enforcement
 from handheld_db_module import store_evidence, check_uid, add_new_uid
 
+# Global variables for authenticated user session
+CURRENT_USER_ID = None
+CURRENT_USER_NAME = None
+CURRENT_USER_ROLE = None
+
 # DFR0528 UPS HAT Battery Reading
 UPS_AVAILABLE = False
 UPS_I2C_ADDRESS = 0x10  # DFR0528 I2C address
