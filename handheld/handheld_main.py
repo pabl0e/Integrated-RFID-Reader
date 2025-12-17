@@ -14,6 +14,11 @@ from PIL import ImageFont
 from handheld_rfid_module import scan_rfid_for_enforcement
 from handheld_db_module import store_evidence, check_uid, add_new_uid
 
+# Global variables for authenticated user session
+CURRENT_USER_ID = None
+CURRENT_USER_NAME = None
+CURRENT_USER_ROLE = None
+
 # DFR0528 UPS HAT Battery Reading
 UPS_AVAILABLE = False
 UPS_I2C_ADDRESS = 0x10  # DFR0528 I2C address
@@ -1060,146 +1065,283 @@ def run_uid_registration():
         return False
 
 # ============================================================================
-# PIN AUTHENTICATION FUNCTIONS
+# PIN AUTHENTICATION UI FUNCTIONS
 # ============================================================================
 
-def get_local_cache_path():
-    """Get path to local authentication cache file"""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    cache_dir = os.path.join(base_dir, "auth_cache")
-    os.makedirs(cache_dir, exist_ok=True)
-    return os.path.join(cache_dir, "authenticated_users.json")
-
-def load_auth_cache():
-    """Load cached authenticated users from local file"""
-    cache_path = get_local_cache_path()
-    try:
-        if os.path.exists(cache_path):
-            with open(cache_path, 'r') as f:
-                cache_data = json.load(f)
-                return cache_data.get('users', [])
-    except Exception as e:
-        print(f"Error loading auth cache: {e}")
-    return []
-
-def save_auth_cache(users):
+def show_pin_entry_screen():
     """
-    Save authenticated users to local cache.
-    Keeps only last 5 users.
-    """
-    cache_path = get_local_cache_path()
-    try:
-        # Keep only last 5 users
-        users_to_save = users[-5:] if len(users) > 5 else users
-        
-        cache_data = {
-            'users': users_to_save,
-            'last_updated': datetime.datetime.now().isoformat()
-        }
-        
-        with open(cache_path, 'w') as f:
-            json.dump(cache_data, f, indent=2)
-        print(f"Auth cache updated with {len(users_to_save)} users")
-    except Exception as e:
-        print(f"Error saving auth cache: {e}")
-
-def authenticate_user_by_pin(pin):
-    """
-    Authenticate user by PIN code.
-    Tries main database first, falls back to local cache if offline.
-    Only allows Admin and Security roles.
-    Admin override PIN "0000" is supported.
+    Show PIN entry screen with 4-digit input (digits 0-3 only).
+    Uses UP/DOWN to cycle digits, CENTER to confirm, BACK to delete.
     
-    Args:
-        pin: 4-digit PIN string
-        
     Returns:
-        dict: User record {user_id, full_name, role, email} if valid, None if invalid
+        str: Entered PIN (4 digits) or None if cancelled
     """
-    # Check for admin override PIN
-    if pin == "0000":
-        print("Admin override PIN detected")
-        return {
-            'user_id': 999,
-            'full_name': 'Admin Override',
-            'role': 'admin',
-            'email': 'admin@override',
-            'auth_method': 'override'
-        }
+    print("=== PIN AUTHENTICATION ===")
     
-    # Try main database first
-    conn = connect_maindb()
-    if conn:
-        try:
-            cursor = conn.cursor(dictionary=True)
-            
-            # Query users table for matching PIN with active status
-            # Only allow Admin and Security roles
-            query = """
-                SELECT user_id, full_name, role, email 
-                FROM users 
-                WHERE pin = %s 
-                AND status = 'active'
-                AND role IN ('admin', 'security')
-            """
-            
-            cursor.execute(query, (pin,))
-            user = cursor.fetchone()
-            
-            if user:
-                print(f"User authenticated: {user['full_name']} ({user['role']})")
-                user['auth_method'] = 'database'
-                
-                # Update cache with this user
-                cache = load_auth_cache()
-                
-                # Check if user already in cache, remove old entry
-                cache = [u for u in cache if u['user_id'] != user['user_id']]
-                
-                # Add user to cache
-                cache.append({
-                    'user_id': user['user_id'],
-                    'full_name': user['full_name'],
-                    'role': user['role'],
-                    'email': user['email'],
-                    'pin': pin  # Store PIN for offline validation
-                })
-                
-                save_auth_cache(cache)
-                
-                return user
+    try:
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+    except:
+        font = None
+    
+    # Initialize GPIO if available
+    GPIO_AVAILABLE = False
+    try:
+        import RPi.GPIO as GPIO
+        GPIO.setmode(GPIO.BCM)
+        UP_PIN = 4
+        DOWN_PIN = 27
+        CENTER_PIN = 17
+        BACK_PIN = 26
+        GPIO.setup([UP_PIN, DOWN_PIN, CENTER_PIN, BACK_PIN], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+        GPIO_AVAILABLE = True
+    except:
+        GPIO_AVAILABLE = False
+        print("GPIO not available, using keyboard input")
+    
+    # PIN entry state
+    entered_digits = []
+    current_digit = 0  # Currently selected digit (0-3)
+    max_digits = 4
+    
+    def draw_pin_screen():
+        """Draw PIN entry screen"""
+        # Build PIN display string with asterisks for entered digits
+        pin_display = ""
+        for i in range(max_digits):
+            if i < len(entered_digits):
+                pin_display += "●"
+            elif i == len(entered_digits):
+                pin_display += str(current_digit)  # Show current digit selection
             else:
-                print("PIN not found or user not authorized (Admin/Security only)")
-                return None
+                pin_display += "_"
+            pin_display += " "
+        
+        elements = [
+            ('text', (10, 5, "PIN REQUIRED", font), {'fill': 'white'}),
+            ('text', (5, 25, "Enter 4-digit PIN", font), {'fill': 'cyan'}),
+            ('text', (15, 45, pin_display, font), {'fill': 'yellow'}),
+            ('text', (5, 70, "UP/DOWN: Change", font), {'fill': 'white'}),
+            ('text', (5, 85, "RIGHT: Confirm", font), {'fill': 'white'}),
+            ('text', (5, 100, "LEFT: Delete", font), {'fill': 'white'})
+        ]
+        
+        if OLED_AVAILABLE:
+            Clear_Screen()
+            Draw_All_Elements(elements)
+        else:
+            Draw_All_Elements(elements)
+    
+    # Main PIN entry loop
+    while True:
+        draw_pin_screen()
+        
+        if GPIO_AVAILABLE:
+            # Wait for button press
+            while True:
+                up_state = GPIO.input(UP_PIN)
+                down_state = GPIO.input(DOWN_PIN)
+                center_state = GPIO.input(CENTER_PIN)
+                back_state = GPIO.input(BACK_PIN)
                 
-        except Error as e:
-            print(f"Database authentication error: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+                if up_state == GPIO.HIGH:
+                    # Increment digit (0-3 only)
+                    current_digit = (current_digit + 1) % 4
+                    time.sleep(0.2)  # Debounce
+                    break
+                
+                elif down_state == GPIO.HIGH:
+                    # Decrement digit (0-3 only)
+                    current_digit = (current_digit - 1) % 4
+                    time.sleep(0.2)  # Debounce
+                    break
+                
+                elif center_state == GPIO.HIGH:
+                    # Confirm current digit
+                    entered_digits.append(current_digit)
+                    current_digit = 0  # Reset for next digit
+                    time.sleep(0.3)  # Debounce
+                    
+                    # Check if PIN complete
+                    if len(entered_digits) == max_digits:
+                        pin_string = ''.join(map(str, entered_digits))
+                        print(f"PIN entered: {pin_string}")
+                        return pin_string
+                    break
+                
+                elif back_state == GPIO.HIGH:
+                    # Delete last digit
+                    if len(entered_digits) > 0:
+                        entered_digits.pop()
+                        current_digit = 0
+                        time.sleep(0.3)  # Debounce
+                    else:
+                        # Cancel if no digits entered
+                        print("PIN entry cancelled")
+                        return None
+                    break
+                
+                time.sleep(0.05)
+        else:
+            # Keyboard fallback
+            print(f"\nCurrent PIN: {''.join(map(str, entered_digits))}")
+            print(f"Current digit: {current_digit}")
+            print("u=up, d=down, c=confirm, b=back, q=cancel")
+            user_input = input("> ").strip().lower()
+            
+            if user_input == 'u':
+                current_digit = (current_digit + 1) % 4
+            elif user_input == 'd':
+                current_digit = (current_digit - 1) % 4
+            elif user_input == 'c':
+                entered_digits.append(current_digit)
+                current_digit = 0
+                if len(entered_digits) == max_digits:
+                    pin_string = ''.join(map(str, entered_digits))
+                    return pin_string
+            elif user_input == 'b':
+                if len(entered_digits) > 0:
+                    entered_digits.pop()
+                    current_digit = 0
+                else:
+                    return None
+            elif user_input == 'q':
+                return None
+
+
+def show_login_screen(user_name, designation):
+    """Show successful login screen with user info"""
+    print(f"=== LOGGED IN: {user_name} ===")
     
-    # Fallback to local cache if database unavailable
-    print("Database unavailable, checking local cache...")
-    cache = load_auth_cache()
+    try:
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+    except:
+        font = None
     
-    for user in cache:
-        if user.get('pin') == pin:
-            print(f"User authenticated from cache: {user['full_name']}")
-            return {
-                'user_id': user['user_id'],
-                'full_name': user['full_name'],
-                'role': user['role'],
-                'email': user['email'],
-                'auth_method': 'cache'
-            }
+    # Truncate name if too long
+    display_name = user_name[:18] if len(user_name) > 18 else user_name
     
-    print("PIN not found in cache")
+    elements = [
+        ('text', (10, 20, "LOGIN SUCCESS", font), {'fill': 'green'}),
+        ('text', (10, 40, f"Welcome!", font), {'fill': 'white'}),
+        ('text', (10, 55, display_name, font), {'fill': 'cyan'}),
+        ('text', (10, 75, f"{designation.upper()}", font), {'fill': 'yellow'}),
+        ('text', (10, 100, "Loading menu...", font), {'fill': 'white'})
+    ]
+    
+    if OLED_AVAILABLE:
+        Clear_Screen()
+        Draw_All_Elements(elements)
+    else:
+        Draw_All_Elements(elements)
+    
+    time.sleep(2)
+
+
+def show_login_failed_screen(attempts_left):
+    """Show failed login screen"""
+    print("=== LOGIN FAILED ===")
+    
+    try:
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+    except:
+        font = None
+    
+    elements = [
+        ('text', (10, 20, "LOGIN FAILED", font), {'fill': 'red'}),
+        ('text', (10, 45, "Invalid PIN", font), {'fill': 'yellow'}),
+        ('text', (10, 70, f"Attempts left: {attempts_left}", font), {'fill': 'white'}),
+        ('text', (10, 95, "Try again...", font), {'fill': 'cyan'})
+    ]
+    
+    if OLED_AVAILABLE:
+        Clear_Screen()
+        Draw_All_Elements(elements)
+    else:
+        Draw_All_Elements(elements)
+    
+    time.sleep(2)
+
+
+def show_lockout_screen(seconds):
+    """Show lockout screen with countdown"""
+    print(f"=== LOCKED OUT FOR {seconds} SECONDS ===")
+    
+    try:
+        from PIL import ImageFont
+        font = ImageFont.load_default()
+    except:
+        font = None
+    
+    elements = [
+        ('text', (10, 15, "TOO MANY", font), {'fill': 'red'}),
+        ('text', (10, 35, "FAILED ATTEMPTS", font), {'fill': 'red'}),
+        ('text', (10, 60, "System Locked", font), {'fill': 'yellow'}),
+        ('text', (10, 85, f"Wait {seconds}s", font), {'fill': 'white'})
+    ]
+    
+    if OLED_AVAILABLE:
+        Clear_Screen()
+        Draw_All_Elements(elements)
+    else:
+        Draw_All_Elements(elements)
+
+
+def authenticate_user():
+    """
+    Main authentication flow with PIN entry and validation.
+    Implements 3-attempt limit with 30-second lockout.
+    
+    Returns:
+        dict: User record if successful, None if failed
+    """
+    from handheld_db_module import authenticate_user_by_pin
+    
+    max_attempts = 3
+    attempts_left = max_attempts
+    lockout_duration = 30  # seconds
+    
+    while attempts_left > 0:
+        # Show PIN entry screen
+        entered_pin = show_pin_entry_screen()
+        
+        if entered_pin is None:
+            # User cancelled
+            print("Authentication cancelled")
+            return None
+        
+        # Validate PIN
+        user = authenticate_user_by_pin(entered_pin)
+        
+        if user:
+            # Success
+            show_login_screen(user['full_name'], user['designation'])
+            return user
+        else:
+            # Failed
+            attempts_left -= 1
+            
+            if attempts_left > 0:
+                show_login_failed_screen(attempts_left)
+            else:
+                # Lockout
+                show_lockout_screen(lockout_duration)
+                
+                # Countdown lockout with screen updates every 5 seconds
+                for remaining in range(lockout_duration, 0, -5):
+                    time.sleep(5)
+                    if remaining > 5:
+                        show_lockout_screen(remaining - 5)
+                
+                # Reset attempts after lockout
+                attempts_left = max_attempts
+                print("Lockout ended, please try again")
+    
     return None
 
-# Global variable to store authenticated user
-CURRENT_USER_ID = None
-CURRENT_USER_NAME = None
-CURRENT_USER_ROLE = None
+# Global variable to store authenticated user (already defined at top)
 
 def main():
     """Main function to orchestrate the parking violations enforcement workflow"""
@@ -1233,44 +1375,46 @@ def main():
             
             print("=== PARKING VIOLATIONS ENFORCEMENT SYSTEM ===")
             
-            # ========== PIN AUTHENTICATION ==========
+            # ========== MAIN AUTHENTICATION LOOP ==========
             global CURRENT_USER_ID, CURRENT_USER_NAME, CURRENT_USER_ROLE
             
-            # Authenticate user
-            authenticated_user = authenticate_user()
-            
-            if not authenticated_user:
-                print("Authentication failed. System exiting.")
-                elements = [
-                    ('text', (10, 40, "AUTH FAILED", font), {'fill': 'red'}),
-                    ('text', (10, 70, "System Exit", font), {'fill': 'white'})
-                ]
-                if OLED_AVAILABLE:
-                    Clear_Screen()
-                    Draw_All_Elements(elements)
-                time.sleep(2)
-                return
-            
-            # Store authenticated user info
-            CURRENT_USER_ID = authenticated_user['user_id']
-            CURRENT_USER_NAME = authenticated_user['full_name']
-            CURRENT_USER_ROLE = authenticated_user['role']
-            
-            print(f"Authenticated as: {CURRENT_USER_NAME} (ID: {CURRENT_USER_ID}, Role: {CURRENT_USER_ROLE})")
-            
-            # ========== MAIN SYSTEM LOOP ==========
-            print("Two violation types:")
-            print("1. Parking in No Parking Zones")
-            print("2. Unauthorized Parking in designated Parking spots")
-            
-            # Show main menu and pre-warm camera
-            picam2, should_continue = show_main_menu_with_camera()
-            
-            if not should_continue:
-                print("System cancelled by user")
-                return
-            
-            # Step 1: RFID Scanning (Required field)
+            # Main loop to allow re-authentication after logout
+            while True:
+                # Authenticate user
+                authenticated_user = authenticate_user()
+                
+                if not authenticated_user:
+                    print("Authentication failed. System exiting.")
+                    elements = [
+                        ('text', (10, 40, "AUTH FAILED", font), {'fill': 'red'}),
+                        ('text', (10, 70, "System Exit", font), {'fill': 'white'})
+                    ]
+                    if OLED_AVAILABLE:
+                        Clear_Screen()
+                        Draw_All_Elements(elements)
+                    time.sleep(2)
+                    return
+                
+                # Store authenticated user info
+                CURRENT_USER_ID = authenticated_user['user_id']
+                CURRENT_USER_NAME = authenticated_user['full_name']
+                CURRENT_USER_ROLE = authenticated_user['designation']
+                
+                print(f"Authenticated as: {CURRENT_USER_NAME} (ID: {CURRENT_USER_ID}, Role: {CURRENT_USER_ROLE})")
+                
+                # ========== MAIN SYSTEM LOOP ==========
+                print("Two violation types:")
+                print("1. Parking in No Parking Zones")
+                print("2. Unauthorized Parking in designated Parking spots")
+                
+                # Show main menu and pre-warm camera
+                picam2, should_continue = show_main_menu_with_camera()
+                
+                if not should_continue:
+                    print("User logged out - returning to login screen")
+                    continue  # Go back to authentication
+                
+                # Step 1: RFID Scanning (Required field)
             print("Step 1: Scanning RFID tag (Required)...")
             scanned_uid = run_rfid_scanner()
             
@@ -1705,7 +1849,7 @@ def authenticate_user():
         
         if user:
             # Success
-            show_login_screen(user['full_name'], user['role'])
+            show_login_screen(user['full_name'], user['designation'])
             return user
         else:
             # Failed
