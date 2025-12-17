@@ -1208,6 +1208,33 @@ def main():
         time.sleep(1)  # Brief initialization screen
         
         print("=== PARKING VIOLATIONS ENFORCEMENT SYSTEM ===")
+        
+        # ========== PIN AUTHENTICATION ==========
+        global CURRENT_USER_ID, CURRENT_USER_NAME, CURRENT_USER_ROLE
+        
+        # Authenticate user
+        authenticated_user = authenticate_user()
+        
+        if not authenticated_user:
+            print("Authentication failed. System exiting.")
+            elements = [
+                ('text', (10, 40, "AUTH FAILED", font), {'fill': 'red'}),
+                ('text', (10, 70, "System Exit", font), {'fill': 'white'})
+            ]
+            if OLED_AVAILABLE:
+                Clear_Screen()
+                Draw_All_Elements(elements)
+            time.sleep(2)
+            return
+        
+        # Store authenticated user info
+        CURRENT_USER_ID = authenticated_user['user_id']
+        CURRENT_USER_NAME = authenticated_user['full_name']
+        CURRENT_USER_ROLE = authenticated_user['role']
+        
+        print(f"Authenticated as: {CURRENT_USER_NAME} (ID: {CURRENT_USER_ID}, Role: {CURRENT_USER_ROLE})")
+        
+        # ========== MAIN SYSTEM LOOP ==========
         print("Two violation types:")
         print("1. Parking in No Parking Zones")
         print("2. Unauthorized Parking in designated Parking spots")
