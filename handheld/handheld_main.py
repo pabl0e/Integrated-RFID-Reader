@@ -606,7 +606,7 @@ def run_photo_capture(picam2):
                             captured_image = Image.open(full_photo_path)
                             Clear_Screen()
                             Display_Image(captured_image)
-                            time.sleep(2)  # Show preview for 2 seconds
+                            time.sleep(5)  # Show preview for 5 seconds
                         except Exception as load_error:
                             print(f"Could not load image: {load_error}")
                     
@@ -1506,6 +1506,8 @@ def main():
                         Draw_All_Elements(elements_to_draw)
                     else:
                         Draw_All_Elements(elements_to_draw)
+                    
+                    time.sleep(5)  # Show summary for 5 seconds
                 
                 # Loop back to authentication
 
