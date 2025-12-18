@@ -1526,84 +1526,73 @@ def main():
                         Draw_All_Elements(elements_to_draw)
                     
                     time.sleep(3)  # Show summary for 3 seconds
+                    
+                    # Show detailed violation log summary on OLED
+                    if OLED_AVAILABLE:
+                        # Determine database type from storage method
+                        db_type = "MySQL" if result.get('storage_method', '').lower() == 'mysql' else "Local"
+                        db_status = "OK Saved" if result["ok"] else "X Failed"
+                        
+                        # Truncate UID for display (show first 8 characters)
+                        display_uid = scanned_uid[:8] if len(scanned_uid) > 8 else scanned_uid
                 
-                 # Show detailed violation log summary on OLED
-                 
-            if OLED_AVAILABLE:
-                # Determine database type from storage method
-                db_type = "MySQL" if result.get('storage_method', '').lower() == 'mysql' else "Local"
-                db_status = "OK Saved" if result["ok"] else "X Failed"
+                        # Truncate violation type for display
+                        violation_short = selected_violation[:20] if len(selected_violation) > 20 else selected_violation
+                        if len(selected_violation) > 20:
+                            violation_lines = selected_violation.split()
+                            mid = len(violation_lines) // 2
+                            violation_line1 = " ".join(violation_lines[:mid])[:16]
+                            violation_line2 = " ".join(violation_lines[mid:])[:16]
+                        else:
+                            violation_line1 = violation_short
+                            violation_line2 = ""
+                        
+                        # Get violation ID for tracking
+                        violation_id = result.get('evidence_id', 'N/A')
+                        display_id = str(violation_id)[:8] if len(str(violation_id)) > 8 else str(violation_id)
+                        
+                        # Get previous violations count for this UID
+                        previous_count = uid_info.get('previous_violations', 0)
+                        
+                        summary_elements = [
+                            ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
+                            ('text', (5, 16, f"ID: {display_id}", font), {'fill': 'green'}),
+                            ('text', (5, 26, f"UID: {display_uid}", font), {'fill': 'cyan'}),
+                            ('text', (5, 36, f"Past Violations: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
+                            ('text', (5, 46, "Violation Type:", font), {'fill': 'white'}),
+                            ('text', (5, 56, violation_line1, font), {'fill': 'yellow'}),
+                        ]
+                        
+                        # Add second line of violation if needed
+                        if violation_line2:
+                            summary_elements.append(('text', (5, 66, violation_line2, font), {'fill': 'yellow'}))
+                            db_y_pos = 81
+                        else:
+                            db_y_pos = 71
+                        
+                        # Add database status
+                        summary_elements.extend([
+                            ('text', (5, db_y_pos, f"DB: {db_type}", font), {'fill': 'white'}),
+                            ('text', (5, db_y_pos + 15, db_status, font), {'fill': 'green' if result["ok"] else 'red'})
+                        ])
+                        
+                        Clear_Screen()
+                        Draw_All_Elements(summary_elements)
+                        time.sleep(5)  # Show summary for 5 seconds
+                    
+                    print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
+                    print(f"Violation Summary:")
+                    print(f"  ID: {result.get('evidence_id', 'N/A')}")
+                    print(f"  RFID UID: {scanned_uid}")
+                    print(f"  Previous Violations: {uid_info.get('previous_violations', 0)}")
+                    print(f"  Photo: {photo_path}")
+                    print(f"  Violation: {selected_violation}")
+                    print(f"  Location: Campus Parking Area")
+                    print(f"  Device: HANDHELD_01")
+                    print(f"  Database: {'Recorded' if result['ok'] else 'Failed'}")
+                    print(f"  Storage: {result.get('storage_method', 'unknown')}")
                 
-                # Truncate UID for display (show first 8 characters)
-                display_uid = scanned_uid[:8] if len(scanned_uid) > 8 else scanned_uid
-                
-                # Truncate violation type for display
-                violation_short = selected_violation[:20] if len(selected_violation) > 20 else selected_violation
-                if len(selected_violation) > 20:
-                    violation_lines = selected_violation.split()
-                    mid = len(violation_lines) // 2
-                    violation_line1 = " ".join(violation_lines[:mid])[:16]
-                    violation_line2 = " ".join(violation_lines[mid:])[:16]
-                else:
-                    violation_line1 = violation_short
-                    violation_line2 = ""
-                
-                # Get violation ID for tracking
-                violation_id = result.get('evidence_id', 'N/A')
-                display_id = str(violation_id)[:8] if len(str(violation_id)) > 8 else str(violation_id)
-                
-                # Get previous violations count for this UID
-                previous_count = uid_info.get('previous_violations', 0)
-                
-                summary_elements = [
-                    ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
-                    ('text', (5, 16, f"ID: {display_id}", font), {'fill': 'green'}),
-                    ('text', (5, 26, f"UID: {display_uid}", font), {'fill': 'cyan'}),
-                    ('text', (5, 36, f"Past Violations: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
-                    ('text', (5, 46, "Violation Type:", font), {'fill': 'white'}),
-                    ('text', (5, 56, violation_line1, font), {'fill': 'yellow'}),
-                ]
-                
-                # Add second line of violation if needed
-                if violation_line2:
-                    summary_elements.append(('text', (5, 66, violation_line2, font), {'fill': 'yellow'}))
-                    db_y_pos = 81
-                else:
-                    db_y_pos = 71
-                
-                # Add database status
-                summary_elements.extend([
-                    ('text', (5, db_y_pos, f"DB: {db_type}", font), {'fill': 'white'}),
-                    ('text', (5, db_y_pos + 15, db_status, font), {'fill': 'green' if result["ok"] else 'red'})
-                ])
-                
-                Clear_Screen()
-                Draw_All_Elements(summary_elements)
-                time.sleep(5)  # Show summary for 5 seconds
-            
-            print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
-            print(f"Violation Summary:")
-            print(f"  ID: {result.get('evidence_id', 'N/A')}")
-            print(f"  RFID UID: {scanned_uid}")
-            print(f"  Previous Violations: {uid_info.get('previous_violations', 0)}")
-            print(f"  Photo: {photo_path}")
-            print(f"  Violation: {selected_violation}")
-            print(f"  Location: Campus Parking Area")
-            print(f"  Device: HANDHELD_01")
-            print(f"  Database: {'Recorded' if result['ok'] else 'Failed'}")
-            print(f"  Storage: {result.get('storage_method', 'unknown')}")
-            
-            time.sleep(5)
-            
-            # Clean up camera
-            if picam2:
-                try:
-                    picam2.stop()
-                    print("Camera stopped")
-                except:
-                    pass
-
-                # Loop back to authentication
+                # Loop back to main menu (inner loop continues)
 
         except Exception as e:
             print(f"Main system error: {e}")
