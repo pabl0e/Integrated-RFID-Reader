@@ -1313,6 +1313,24 @@ def authenticate_user():
             print("Authentication cancelled")
             return None
         
+        # Show verifying screen while checking PIN
+        try:
+            from PIL import ImageFont
+            font = ImageFont.load_default()
+        except:
+            font = None
+        
+        verifying_elements = [
+            ('text', (10, 35, "VERIFYING", font), {'fill': 'yellow'}),
+            ('text', (10, 55, "PIN...", font), {'fill': 'yellow'}),
+            ('text', (10, 85, "Please wait", font), {'fill': 'white'})
+        ]
+        if OLED_AVAILABLE:
+            Clear_Screen()
+            Draw_All_Elements(verifying_elements)
+        else:
+            Draw_All_Elements(verifying_elements)
+        
         # Validate PIN
         user = authenticate_user_by_pin(entered_pin)
         
