@@ -1122,9 +1122,9 @@ def show_pin_entry_screen():
             ('text', (10, 5, "PIN REQUIRED", font), {'fill': 'white'}),
             ('text', (5, 25, "Enter 4-digit PIN", font), {'fill': 'cyan'}),
             ('text', (15, 45, pin_display, font), {'fill': 'yellow'}),
-            ('text', (5, 70, "UP/DOWN: Change", font), {'fill': 'white'}),
-            ('text', (5, 85, "RIGHT: Confirm", font), {'fill': 'white'}),
-            ('text', (5, 100, "LEFT: Delete", font), {'fill': 'white'})
+            ('text', (5, 70, "UP/DOWN: Change", font), {'fill': 'red'}),
+            ('text', (5, 85, "RIGHT: Confirm", font), {'fill': 'cyan'}),
+            ('text', (5, 100, "LEFT: Delete", font), {'fill': 'blue'})
         ]
         
         if OLED_AVAILABLE:
@@ -1421,169 +1421,93 @@ def main():
                 
                 print(f"Authenticated as: {CURRENT_USER_NAME} (ID: {CURRENT_USER_ID}, Role: {CURRENT_USER_ROLE})")
                 
-                # ========== MAIN SYSTEM LOOP ==========
-                print("Two violation types:")
-                print("1. Parking in No Parking Zones")
-                print("2. Unauthorized Parking in designated Parking spots")
-                
-                # Show main menu and pre-warm camera
-                picam2, should_continue = show_main_menu_with_camera()
-                
-                if not should_continue:
-                    print("User logged out - returning to login screen")
-                    continue  # Go back to authentication
-                
-                # Step 1: RFID Scanning (Required field)
-                print("Step 1: Scanning RFID tag (Required)...")
-                scanned_uid = run_rfid_scanner()
-                
-                if not scanned_uid:
-                    print("RFID scanning failed. Cannot proceed without RFID UID.")
-                    continue
-                
-                print(f"RFID UID captured: {scanned_uid}")
-                
-                # Check for previous violations
-                uid_info = check_uid(scanned_uid)
-                if uid_info['previous_violations'] > 0:
-                    print(f"WARNING: This RFID has {uid_info['previous_violations']} previous violations")
-                
-                # Step 2: Photo capture (Required field)
-                print("Step 2: Taking evidence photo (Required)...")
-                photo_success, photo_path = run_photo_capture(picam2)
-                
-                if not photo_success or not photo_path:
-                    print("Photo capture failed. Cannot proceed without evidence photo.")
-                    continue
-                
-                print(f"Photo captured: {photo_path}")
-                
-                # Step 3: Violation type selection (Required field) - Only 2 options
-                print("Step 3: Selecting violation type (Required)...")
-                selected_violation = run_violation_selector()
-                
-                if not selected_violation:
-                    print("Violation selection failed. Cannot proceed without violation type.")
-                    continue
-                
-                print(f"Violation selected: {selected_violation}")
-                
-                # Step 4: Store violation with authenticated user
-                print("Step 4: Recording violation in database...")
-                result = store_evidence(
-                    rfid_uid=scanned_uid,
-                    photo_path=photo_path,
-                    violation_type=selected_violation,
-                    timestamp=datetime.datetime.now(),
-                    location="Campus Parking Area",
-                    device_id="HANDHELD_01",
-                    reported_by=CURRENT_USER_ID  # Pass authenticated user ID
-                )
-                
-                if result["ok"]:
-                    print(f"Parking violation recorded successfully! ID: {result['evidence_id']}")
-                    # Show success message
-                    elements_to_draw = [
-                        ('text', (10, 10, "PARKING", font), {'fill': 'green'}),
-                        ('text', (10, 25, "VIOLATION", font), {'fill': 'green'}),
-                        ('text', (10, 40, "RECORDED", font), {'fill': 'green'}),
-                        ('text', (10, 60, f"ID: {result['evidence_id']}", font), {'fill': 'white'}),
-                        ('text', (10, 75, "Enforcement", font), {'fill': 'cyan'}),
-                        ('text', (10, 90, "Complete!", font), {'fill': 'cyan'})
-                    ]
-                else:
-                    print(f"Failed to record violation: {result['error']}")
-                    # Show error message
-                    elements_to_draw = [
-                        ('text', (10, 30, "RECORDING", font), {'fill': 'red'}),
-                        ('text', (10, 50, "FAILED", font), {'fill': 'red'}),
-                        ('text', (10, 70, "Check database", font), {'fill': 'yellow'})
-                    ]
-                
-                if OLED_AVAILABLE:
-                    Clear_Screen()
-                    Draw_All_Elements(elements_to_draw)
-                else:
-                    Draw_All_Elements(elements_to_draw)
-                
-                time.sleep(3)  # Show initial result screen
-                
-                # Show detailed violation log summary on OLED
-                if OLED_AVAILABLE:
-                    # Determine database type from storage method
-                    db_type = "MySQL" if result.get('storage_method', '').lower() == 'mysql' else "Local"
-                    db_status = "OK Saved" if result["ok"] else "X Failed"
+                # ========== INNER LOOP - Stay logged in until logout ==========
+                while True:
+                    print("Two violation types:")
+                    print("1. Parking in No Parking Zones")
+                    print("2. Unauthorized Parking in designated Parking spots")
                     
-                    # Truncate UID for display (show first 8 characters)
-                    display_uid = scanned_uid[:8] if len(scanned_uid) > 8 else scanned_uid
+                    # Show main menu and pre-warm camera
+                    picam2, should_continue = show_main_menu_with_camera()
                     
-                    # Truncate violation type for display
-                    violation_short = selected_violation[:20] if len(selected_violation) > 20 else selected_violation
-                    if len(selected_violation) > 20:
-                        violation_lines = selected_violation.split()
-                        mid = len(violation_lines) // 2
-                        violation_line1 = " ".join(violation_lines[:mid])[:16]
-                        violation_line2 = " ".join(violation_lines[mid:])[:16]
+                    if not should_continue:
+                        print("User logged out - returning to login screen")
+                        break  # Break inner loop, go back to authentication
+                    
+                    # Step 1: RFID Scanning (Required field)
+                    print("Step 1: Scanning RFID tag (Required)...")
+                    scanned_uid = run_rfid_scanner()
+                    
+                    if not scanned_uid:
+                        print("RFID scanning failed. Cannot proceed without RFID UID.")
+                        continue
+                    
+                    print(f"RFID UID captured: {scanned_uid}")
+                    
+                    # Check for previous violations
+                    uid_info = check_uid(scanned_uid)
+                    if uid_info['previous_violations'] > 0:
+                        print(f"WARNING: This RFID has {uid_info['previous_violations']} previous violations")
+                    
+                    # Step 2: Photo capture (Required field)
+                    print("Step 2: Taking evidence photo (Required)...")
+                    photo_success, photo_path = run_photo_capture(picam2)
+                    
+                    if not photo_success or not photo_path:
+                        print("Photo capture failed. Cannot proceed without evidence photo.")
+                        continue
+                    
+                    print(f"Photo captured: {photo_path}")
+                    
+                    # Step 3: Violation type selection (Required field) - Only 2 options
+                    print("Step 3: Selecting violation type (Required)...")
+                    selected_violation = run_violation_selector()
+                    
+                    if not selected_violation:
+                        print("Violation selection failed. Cannot proceed without violation type.")
+                        continue
+                    
+                    print(f"Violation selected: {selected_violation}")
+                    
+                    # Step 4: Store violation with authenticated user
+                    print("Step 4: Recording violation in database...")
+                    result = store_evidence(
+                        rfid_uid=scanned_uid,
+                        photo_path=photo_path,
+                        violation_type=selected_violation,
+                        timestamp=datetime.datetime.now(),
+                        location="Campus Parking Area",
+                        device_id="HANDHELD_01",
+                        reported_by=CURRENT_USER_ID  # Pass authenticated user ID
+                    )
+                    
+                    if result["ok"]:
+                        print(f"Parking violation recorded successfully! ID: {result['evidence_id']}")
+                        # Show success message
+                        elements_to_draw = [
+                            ('text', (10, 10, "PARKING", font), {'fill': 'green'}),
+                            ('text', (10, 25, "VIOLATION", font), {'fill': 'green'}),
+                            ('text', (10, 40, "RECORDED", font), {'fill': 'green'}),
+                            ('text', (10, 60, f"ID: {result['evidence_id']}", font), {'fill': 'white'}),
+                            ('text', (10, 75, "Enforcement", font), {'fill': 'cyan'}),
+                            ('text', (10, 90, "Complete!", font), {'fill': 'cyan'})
+                        ]
                     else:
-                        violation_line1 = violation_short
-                        violation_line2 = ""
-                    
-                    # Get violation ID for tracking
-                    violation_id = result.get('evidence_id', 'N/A')
-                    display_id = str(violation_id)[:8] if len(str(violation_id)) > 8 else str(violation_id)
-                    
-                    # Get previous violations count for this UID
-                    previous_count = uid_info.get('previous_violations', 0)
-                    
-                    summary_elements = [
-                        ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
-                        ('text', (5, 16, f"ID: {display_id}", font), {'fill': 'green'}),
-                        ('text', (5, 26, f"UID: {display_uid}", font), {'fill': 'cyan'}),
-                        ('text', (5, 36, f"Past Violations: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
-                        ('text', (5, 46, "Violation Type:", font), {'fill': 'white'}),
-                        ('text', (5, 56, violation_line1, font), {'fill': 'yellow'}),
-                    ]
-                    
-                    # Add second line of violation if needed
-                    if violation_line2:
-                        summary_elements.append(('text', (5, 66, violation_line2, font), {'fill': 'yellow'}))
-                        db_y_pos = 81
+                        print(f"Failed to record violation: {result['error']}")
+                        # Show error message
+                        elements_to_draw = [
+                            ('text', (10, 30, "RECORDING", font), {'fill': 'red'}),
+                            ('text', (10, 50, "FAILED", font), {'fill': 'red'}),
+                            ('text', (10, 70, "Check database", font), {'fill': 'yellow'})
+                        ]
+                
+                    if OLED_AVAILABLE:
+                        Clear_Screen()
+                        Draw_All_Elements(elements_to_draw)
                     else:
-                        db_y_pos = 71
-                    
-                    # Add database status
-                    summary_elements.extend([
-                        ('text', (5, db_y_pos, f"DB: {db_type}", font), {'fill': 'white'}),
-                        ('text', (5, db_y_pos + 15, db_status, font), {'fill': 'green' if result["ok"] else 'red'})
-                    ])
-                    
-                    Clear_Screen()
-                    Draw_All_Elements(summary_elements)
-                    time.sleep(5)  # Show summary for 5 seconds
+                        Draw_All_Elements(elements_to_draw)
                 
-                print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
-                print(f"Violation Summary:")
-                print(f"  ID: {result.get('evidence_id', 'N/A')}")
-                print(f"  RFID UID: {scanned_uid}")
-                print(f"  Previous Violations: {uid_info.get('previous_violations', 0)}")
-                print(f"  Photo: {photo_path}")
-                print(f"  Violation: {selected_violation}")
-                print(f"  Location: Campus Parking Area")
-                print(f"  Device: HANDHELD_01")
-                print(f"  Database: {'Recorded' if result['ok'] else 'Failed'}")
-                print(f"  Storage: {result.get('storage_method', 'unknown')}")
-                
-                time.sleep(5)
-                
-                # Clean up camera
-                if picam2:
-                    try:
-                        picam2.stop()
-                        print("Camera stopped")
-                    except:
-                        pass
-                
-                # Loop back to main menu for next violation
+                # Loop back to authentication
 
         except Exception as e:
             print(f"Main system error: {e}")
