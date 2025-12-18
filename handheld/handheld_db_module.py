@@ -451,6 +451,7 @@ def authenticate_user_by_pin(pin):
     # Try main database first
     conn = connect_maindb()
     if conn:
+        cursor = None
         try:
             cursor = conn.cursor(dictionary=True)
             
@@ -504,11 +505,21 @@ def authenticate_user_by_pin(pin):
                 print("PIN not found or user not authorized (Admin/Security only)")
                 return None
                 
-        except Error as e:
+        except Exception as e:
             print(f"Database authentication error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
         finally:
-            cursor.close()
-            conn.close()
+            if cursor:
+                try:
+                    cursor.close()
+                except:
+                    pass
+            try:
+                conn.close()
+            except:
+                pass
     
     # Fallback to local cache if database unavailable
     print("Database unavailable, checking local cache...")
