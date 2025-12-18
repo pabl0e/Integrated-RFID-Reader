@@ -1,48 +1,48 @@
 # Integrated RFID Reader System
 
-A comprehensive **RFID-based vehicle tracking and parking enforcement system** designed for educational institutions and parking facilities. The system provides real-time vehicle registration verification and parking violation enforcement using multiple deployment configurations.
+A comprehensive **RFID-based vehicle tracking and parking enforcement system** designed for educational institutions and parking facilities. The system provides real-time vehicle registration verification and parking violation enforcement using multiple deployment configurations. This project was made in compliance for our university capstone project.
 
 ![System Overview](https://img.shields.io/badge/Platform-Raspberry%20Pi-red) ![Language](https://img.shields.io/badge/Language-Python-blue) ![Database](https://img.shields.io/badge/Database-MySQL%2FMariaDB-orange) ![License](https://img.shields.io/badge/License-MIT-green)
 
-## 🚀 System Overview
+## System Overview
 
 This integrated system consists of **three main components**:
 
-1. **📱 Handheld Device** - Portable violation enforcement unit
-2. **🏢 Long-Range Station 1** - Entry point 
-3. **🏢 Long-Range Station 2** - Exit point
+1. **Handheld Device** - Portable violation enforcement unit
+2. **Long-Range Station 1** - Entry point 
+3. **Long-Range Station 2** - Exit point
 
 The handheld device can operate **independently** with local storage and **sync** with a central database when network connectivity is available.
 
-## ✨ Key Features
+## Key Features
 
-### 🔋 Handheld Enforcement Device
-- **🏷️ RFID Tag Scanning** - FM-503 compatible RFID reader
-- **📸 Evidence Photography** - High-quality camera integration (Picamera2)
-- **📋 Violation Classification** - Two specific violation types:
+### Handheld Enforcement Device
+- **RFID Tag Scanning** - FM-503 compatible RFID reader
+- **Evidence Photography** - High-quality camera integration (Picamera2)
+- **Violation Classification** - Two specific violation types:
   - Parking in No Parking Zones
   - Unauthorized Parking in designated spots
-- **🖥️ OLED Display** - Real-time feedback and menu navigation
-- **⚡ Offline Operation** - Local SQLite/MySQL storage with sync capability
-- **🔘 Button Interface** - Physical navigation controls (UP/DOWN/CENTER/BACK)
-- **💾 Automatic Backup** - JSON fallback storage when database unavailable
+- **OLED Display** - Real-time feedback and menu navigation
+- **Offline Operation** - Local SQLite/MySQL storage with sync capability
+- **Button Interface** - Physical navigation controls (UP/DOWN/CENTER/BACK)
+- **Automatic Backup** - JSON fallback storage when database unavailable
 
-### 🏢 Long-Range Monitoring Stations
-- **📡 Continuous RFID Monitoring** - Real-time vehicle detection
-- **🖥️ GUI Display System** - Full-screen vehicle information display
-- **👤 Student/Staff Verification** - Complete profile integration
-- **🚗 Vehicle Registration Database** - Make, model, color, license plate tracking
-- **⏰ Time & Access Logging** - Entry/exit timestamp recording
-- **🔄 Multi-threaded Operation** - Non-blocking RFID scanning and GUI updates
+### Long-Range Monitoring Stations
+- **Continuous RFID Monitoring** - Real-time vehicle detection
+- **GUI Display System** - Full-screen vehicle information display
+- **Student/Staff Verification** - Complete profile integration
+- **Vehicle Registration Database** - Make, model, color, license plate tracking
+- **Time & Access Logging** - Entry/exit timestamp recording
+- **Multi-threaded Operation** - Non-blocking RFID scanning and GUI updates
 
-### 🗄️ Database Architecture
-- **🏠 Local Database** - Individual device storage (MySQL/MariaDB)
-- **☁️ Central Database** - Network-synchronized main repository
-- **🔄 Bidirectional Sync** - Evidence upload and reference data download
-- **📊 Data Integrity** - Comprehensive indexing and relationship management
-- **🛡️ Backup Systems** - Multiple storage fallback mechanisms
+### Database Architecture
+- **Local Database** - Individual device storage (MySQL/MariaDB)
+- **Central Database** - Network-synchronized main repository
+- **Bidirectional Sync** - Evidence upload and reference data download
+- **Data Integrity** - Comprehensive indexing and relationship management
+- **Backup Systems** - Multiple storage fallback mechanisms
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -68,7 +68,7 @@ The handheld device can operate **independently** with local storage and **sync*
                     └─────────────────┘
 ```
 
-## 🛠️ Hardware Requirements
+## Hardware Requirements
 
 ### Handheld Device
 - **Raspberry Pi Zero W**
@@ -86,7 +86,7 @@ The handheld device can operate **independently** with local storage and **sync*
 - **Ethernet Connection** (for database sync)
 - **MicroSD Card** (64GB+ recommended)
 
-## 💾 Database Schema
+## Database Schema
 
 ### Core Tables
 
@@ -138,7 +138,7 @@ status            ENUM('active', 'inactive')      -- Account status
 created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ```
 
-## 🚀 Installation & Setup
+## Installation & Setup
 
 ### 1. System Preparation
 
@@ -157,7 +157,7 @@ pip3 install mysql-connector-python pillow picamera2 RPi.GPIO
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/Integrated-RFID-Reader.git
+git clone https://github.com/pabl0e/Integrated-RFID-Reader.git
 cd Integrated-RFID-Reader
 
 # Setup database (for each device)
@@ -201,7 +201,7 @@ def connect_localdb():
     )
 ```
 
-## 🎮 Usage
+## Usage
 
 ### Handheld Enforcement Device
 
@@ -241,7 +241,7 @@ The system supports **automatic bidirectional synchronization**:
 - **Conflict Resolution** - Intelligent merging of data changes
 - **Backup Systems** - JSON file fallback for critical data
 
-## 🔧 API & Integration
+## API & Integration
 
 ### Database Functions
 
@@ -273,7 +273,7 @@ if scanned_uid:
     print(f"Detected tag: {scanned_uid}")
 ```
 
-## 🔍 Monitoring & Maintenance
+## Monitoring & Maintenance
 
 ### System Health Checks
 ```bash
@@ -292,7 +292,7 @@ python3 -c "from picamera2 import Picamera2; print('Camera OK')"
 - **Database Sync** - `/var/log/database_sync.log`
 - **Hardware Status** - `/var/log/hardware_status.log`
 
-## 🔒 Security Features
+## Security Features
 
 - **Encrypted Database Connections** - MySQL SSL/TLS support
 - **User Authentication** - Individual device credentials
@@ -300,7 +300,7 @@ python3 -c "from picamera2 import Picamera2; print('Camera OK')"
 - **Access Control** - Role-based user permissions
 - **Audit Trail** - Complete violation and access logging
 
-## 🤝 Contributing
+## Contributing
 
 1. **Fork** the repository
 2. **Create** a feature branch (`git checkout -b feature/AmazingFeature`)
@@ -308,7 +308,7 @@ python3 -c "from picamera2 import Picamera2; print('Camera OK')"
 4. **Push** to the branch (`git push origin feature/AmazingFeature`)
 5. **Open** a Pull Request
 
-## 📋 Testing
+## Testing
 
 ```bash
 # Run system tests
@@ -318,7 +318,7 @@ python3 test_camera.py        # Camera functionality
 python3 test_sync.py          # Network synchronization
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -351,10 +351,10 @@ sudo raspi-config  # > Interface Options > Camera > Enable
 vcgencmd get_camera
 ```
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🏷️ Project Tags
+## Project Tags
 
 `RFID` `Raspberry-Pi` `MySQL` `Python` `IoT` `Parking-Management` `Vehicle-Tracking` `Database-Sync` `Hardware-Integration` `Real-Time-Systems`

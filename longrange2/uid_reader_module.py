@@ -1,135 +1,39 @@
-from longrange_db_module import get_db_connection  # <-- FIXED: Renamed connect_db
+import mysql.connector
+from mysql.connector import Error
 import serial
-import os
+import time
 import sys
-import time
-from subprocess import Popen 
-import time
-from mysql.connector import Error  
 
-'''Python Scripts for the UID Reader Module'''
+# --- Database Configuration ---
+# Update 'host' to the IP address of your laptop/server
+DB_CONFIG = {
+    'host': '192.168.50.81', 
+    'user': 'jicmugot16',
+    'password': 'melonbruh123',
+    'database': 'rfid_vehicle_system',
+    'connection_timeout': 10
+}
 
-def main():
-    """Main function to run the application"""
-    run_rfid_read()
-
-def import_gpio():
+def get_db_connection():
+    """Establishes a standard connection to the database (No Pool)."""
     try:
-        import RPi.GPIO as GPIO
-        print("RPi.GPIO module successfully imported.")
-        return GPIO
-    except ModuleNotFoundError:
-        print("RPi.GPIO module not available on non-Raspberry Pi system.")
+        connection = mysql.connector.connect(**DB_CONFIG)
+        return connection
+    except Error as e:
+        print(f"DB Connection Error: {e}")
         return None
-    
-def run_rfid_read():
-    GPIO = import_gpio()  # This is where the import happens
-    last_read = None
-    last_data = None
-    last_payload = None
-    try:
-        ser = serial.Serial(
-            #port='/dev/ttyUSB0',
-            port='/dev/serial0',  # Ensure this is the correct serial port
-            baudrate=38400,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
-            bytesize=serial.EIGHTBITS,
-            timeout=1
-        )
-        print(f"Successfully opened serial port {ser.port} at {ser.baudrate} baud.")
-
-    except serial.SerialException as e:
-        print(f"Error opening serial port: {e}")
-        print("Please ensure the RFID reader is connected, the port name is correct, and user permissions (e.g., 'dialout' group) are set.")
-        sys.exit(1)
-
-    print("Waiting for RFID tag...")
-
-    # --- FM503 Command Definitions ---
-    COMMAND_GET_VERSION = b'\x0A' + b'V' + b'\x0D'
-    COMMAND_GET_READER_ID = b'\x0A' + b'S' + b'\x0D'
-    COMMAND_SINGLE_TAG_EPC = b'\x0A' + b'Q' + b'\x0D'
-    COMMAND_MULTI_TAG_EPC = b'\x0A' + b'U' + b'\x0D'
-
-    # --- Main Loop for RFID Reading ---
-    while True:
-        try:
-            ser.flushInput()
-
-            print(f"\nSending Single-TAG read EPC command (Q): {COMMAND_SINGLE_TAG_EPC.hex()}")
-            ser.write(COMMAND_SINGLE_TAG_EPC)
-            time.sleep(0.1)
-
-            response_data = ser.read(ser.inWaiting())
-
-            if response_data:
-                raw_response = response_data.hex()
-                print(f"Received raw response: ", raw_response)
-
-                if len(response_data) >= 4 and \
-                   response_data[0] == 0x0A and \
-                   response_data[1] == ord('Q') and \
-                   response_data[-2:] == b'\x0D\x0A':
-
-                    epc_data_bytes = response_data[2:-2]
-
-                    if epc_data_bytes:
-                        try:
-                            tag_id = epc_data_bytes.decode('ascii').strip()
-
-                            if raw_response == "0a510d0a": # Corrected no-tag response for 'Q'
-                                print("No tag detected in RF field.")
-                            else:
-                                pc = tag_id[0:4]
-                                actual_epc = tag_id[4:-4]
-                                crc16 = tag_id[-4:]
-                                print(f"Detected EPC: {actual_epc}")
-                                if add_new_uid(actual_epc):
-                                    print(f"Added new UID to the Database: {actual_epc}")
-                                else:
-                                    print(f"UID already exists in Database: {actual_epc}")
-
-
-                        except UnicodeDecodeError:
-                            print("Error decoding EPC data. It might not be ASCII hex characters as expected.")
-                    else:
-                        print("Received 'Q' response with no data (likely 'none' for no tag).")
-                else:
-                    print("Received unexpected response format for 'Q' command.")
-            else:
-                print("No response received from reader within timeout.")
-
-            time.sleep(1.5)
-
-        except serial.SerialException as e:
-            print(f"Serial communication error: {e}")
-            print("Attempting to close and re-open serial port...")
-            ser.close()
-            time.sleep(5)
-            try:
-                ser.open()
-                print("Serial port reopened successfully.")
-            except serial.SerialException as e_reopen:
-                print(f"Failed to reopen serial port: {e_reopen}")
-                sys.exit(1)
-
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            sys.exit(1)
-
-""" add_new_uid(): function is for reading and adding a new/unique UID (column) to the rfid_tags table of the Database"""
 
 def add_new_uid(read_uid: str) -> bool:
     """
-    Insert a tag into rfid_tags exactly once.
-    Returns True if a new row was inserted, False if it already existed or on error.
+    Checks if UID exists. If not, adds it.
+    Returns: True if added, False if exists or error.
     """
-    conn = get_db_connection() # <-- FIXED: Renamed connect_db
+    conn = get_db_connection()
     if not conn:
+        print("Failed to connect to database for insertion.")
         return False
         
-    cursor = None # Define cursor outside try
+    cursor = None
     try:
         cursor = conn.cursor()
         # Insert only if the tag_uid does NOT already exist.
@@ -143,23 +47,110 @@ def add_new_uid(read_uid: str) -> bool:
         """
         cursor.execute(query, (read_uid, read_uid))
         conn.commit()
-        return cursor.rowcount == 1  # 1 if inserted, 0 if already existed
+        
+        if cursor.rowcount == 1:
+            return True # Successfully added
+        else:
+            return False # Already existed
+            
     except Error as e:
-        try:
-            if getattr(e, "errno", None) == 1062:  # ER_DUP_ENTRY
-                return False
-        except Exception:
-            pass
-        print(f"Error inserting new UID: {e}")
+        print(f"Error inserting UID: {e}")
         return False
     finally:
         if cursor:
+            cursor.close()
+        if conn and conn.is_connected():
+            conn.close()
+
+def import_gpio():
+    try:
+        import RPi.GPIO as GPIO
+        # print("RPi.GPIO module successfully imported.")
+        return GPIO
+    except ModuleNotFoundError:
+        print("RPi.GPIO module not available (Running on PC?).")
+        return None
+
+def run_rfid_read():
+    GPIO = import_gpio() 
+    
+    try:
+        ser = serial.Serial(
+            port='/dev/serial0',  # Ensure this matches your Pi's configuration
+            baudrate=38400,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_ONE,
+            bytesize=serial.EIGHTBITS,
+            timeout=1
+        )
+        print(f"Serial port {ser.port} opened. Waiting for RFID tag...")
+
+    except serial.SerialException as e:
+        print(f"Error opening serial port: {e}")
+        sys.exit(1)
+
+    # --- FM503 Command Definitions ---
+    COMMAND_SINGLE_TAG_EPC = b'\x0A' + b'Q' + b'\x0D'
+
+    while True:
+        try:
+            ser.flushInput()
+            # print(f"Scanning...") # Optional: reduce spam
+            ser.write(COMMAND_SINGLE_TAG_EPC)
+            time.sleep(0.1)
+
+            response_data = ser.read(ser.inWaiting())
+
+            if response_data:
+                raw_response = response_data.hex()
+
+                # Basic validation of response packet
+                if len(response_data) >= 4 and \
+                   response_data[0] == 0x0A and \
+                   response_data[1] == ord('Q') and \
+                   response_data[-2:] == b'\x0D\x0A':
+
+                    # Extract data between header/command and footer
+                    epc_data_bytes = response_data[2:-2]
+
+                    if epc_data_bytes:
+                        try:
+                            tag_id = epc_data_bytes.decode('ascii').strip()
+
+                            # Check for the specific "No Tag" response code
+                            if raw_response == "0a510d0a": 
+                                pass # No tag, do nothing
+                            else:
+                                # Parse EPC (removes PC bytes and CRC bytes)
+                                actual_epc = tag_id[4:-4]
+                                print(f"Detected EPC: {actual_epc}")
+                                
+                                # --- DATABASE INTERACTION ---
+                                if add_new_uid(actual_epc):
+                                    print(f" >> ADDED new UID: {actual_epc}")
+                                else:
+                                    print(f" >> UID exists: {actual_epc}")
+
+                        except UnicodeDecodeError:
+                            print("Error decoding EPC data.")
+            
+            # Loop delay
+            time.sleep(1.5)
+
+        except serial.SerialException as e:
+            print(f"Serial error: {e}. Reconnecting...")
+            ser.close()
+            time.sleep(5)
             try:
-                cursor.close()
-            except Exception:
+                ser.open()
+            except:
                 pass
-        if conn:
-            conn.close() # Returns connection to the pool
+        except KeyboardInterrupt:
+            print("\nStopping...")
+            break
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            break
 
 if __name__ == "__main__":
-    main()
+    run_rfid_read()
