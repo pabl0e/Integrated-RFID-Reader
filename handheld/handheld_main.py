@@ -310,6 +310,9 @@ def show_main_menu_with_camera():
                     print("UP+DOWN pressed - Logging out")
                     time.sleep(0.5)
                     
+                    # Access global user session variables
+                    global CURRENT_USER_ID, CURRENT_USER_NAME, CURRENT_USER_ROLE
+                    
                     # Show logout screen with current user name
                     logout_elements = [
                         ('text', (10, 30, "LOGGING OUT", font), {'fill': 'yellow'}),
@@ -322,7 +325,6 @@ def show_main_menu_with_camera():
                     time.sleep(2)
                     
                     # Clear user session
-                    global CURRENT_USER_ID, CURRENT_USER_NAME, CURRENT_USER_ROLE
                     CURRENT_USER_ID = None
                     CURRENT_USER_NAME = None
                     CURRENT_USER_ROLE = None
