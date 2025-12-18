@@ -310,10 +310,11 @@ def show_main_menu_with_camera():
                     print("UP+DOWN pressed - Logging out")
                     time.sleep(0.5)
                     
-                    # Show logout screen
+                    # Show logout screen with current user name
                     logout_elements = [
-                        ('text', (10, 40, "LOGGING OUT", font), {'fill': 'yellow'}),
-                        ('text', (10, 70, "Goodbye!", font), {'fill': 'white'})
+                        ('text', (10, 30, "LOGGING OUT", font), {'fill': 'yellow'}),
+                        ('text', (10, 50, f"{CURRENT_USER_NAME}", font), {'fill': 'cyan'}),
+                        ('text', (10, 75, "Goodbye!", font), {'fill': 'white'})
                     ]
                     if OLED_AVAILABLE:
                         Clear_Screen()
