@@ -13,8 +13,7 @@ import os
 import socket
 import sys
 from datetime import datetime, timedelta
-from handheld_db_module import connect_localdb, connect_maindb, sync_violations
-from handheld_db_module import add_new_uid  # We'll modify this to also sync RFID tags
+from handheld_db_module import connect_localdb, connect_maindb, sync_violations, sync_authorized_users_from_main
 
 # Configure logging - DEBUG level for troubleshooting
 logging.basicConfig(
@@ -183,6 +182,11 @@ class AutoSyncService:
             self.logger.info("Syncing RFID tags...")
             tags_result = self.sync_rfid_tags()
             sync_results['rfid_tags'] = tags_result
+            
+            # Sync authorized users (Admin/Security)
+            self.logger.info("Syncing authorized users...")
+            users_result = sync_authorized_users_from_main()
+            sync_results['authorized_users'] = users_result
             
             # Check if all syncs were successful
             all_successful = all(result.get('ok', False) for result in sync_results.values())
