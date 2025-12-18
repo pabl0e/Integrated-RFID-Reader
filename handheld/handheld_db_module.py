@@ -540,3 +540,117 @@ def authenticate_user_by_pin(pin):
     
     print("PIN not found in cache")
     return None
+
+# ============================================================================
+# AUTHORIZED USERS TABLE AND SYNC FUNCTIONS
+# ============================================================================
+
+def create_authorized_users_table():
+    """Create the authorized_users table in the local database if it doesn't exist"""
+    conn = connect_localdb()
+    if not conn:
+        print("Cannot create authorized_users table - no database connection")
+        return False
+    
+    try:
+        cursor = conn.cursor()
+        
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS authorized_users (
+            id INT PRIMARY KEY,
+            usc_id VARCHAR(50),
+            email VARCHAR(255),
+            designation VARCHAR(50),
+            pin VARCHAR(4),
+            status VARCHAR(20) DEFAULT 'active',
+            last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_pin (pin),
+            INDEX idx_designation (designation)
+        )
+        """
+        
+        cursor.execute(create_table_sql)
+        conn.commit()
+        print("authorized_users table created/verified successfully")
+        return True
+        
+    except Error as e:
+        print(f"Error creating authorized_users table: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def sync_authorized_users_from_main():
+    """
+    Fetch Admin and Security users from main database and update local database.
+    This should be called by the auto_sync_service periodically.
+    """
+    print("Syncing authorized users from main database...")
+    
+    # First ensure the local table exists
+    create_authorized_users_table()
+    
+    main_conn = connect_maindb()
+    if not main_conn:
+        print("Cannot sync users - main database unreachable")
+        return {"ok": False, "error": "Main database unreachable", "synced_users": 0}
+    
+    local_conn = connect_localdb()
+    if not local_conn:
+        main_conn.close()
+        print("Cannot sync users - local database unreachable")
+        return {"ok": False, "error": "Local database unreachable", "synced_users": 0}
+    
+    stats = {"ok": True, "synced_users": 0}
+    
+    try:
+        main_cursor = main_conn.cursor(dictionary=True)
+        local_cursor = local_conn.cursor()
+        
+        # Fetch all Admin and Security users with PINs from main database
+        query = """
+            SELECT id, usc_id, email, designation, pin, status
+            FROM users
+            WHERE designation IN ('Admin', 'Security')
+            AND pin IS NOT NULL
+            AND status = 'active'
+        """
+        
+        main_cursor.execute(query)
+        users = main_cursor.fetchall()
+        
+        print(f"Found {len(users)} authorized users in main database")
+        
+        for user in users:
+            try:
+                replace_query = """
+                    REPLACE INTO authorized_users 
+                    (id, usc_id, email, designation, pin, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                local_cursor.execute(replace_query, (
+                    user['id'], user['usc_id'], user['email'],
+                    user['designation'], user['pin'], user['status']
+                ))
+                stats["synced_users"] += 1
+            except Error as e:
+                print(f"Error syncing user {user['id']}: {e}")
+        
+        local_conn.commit()
+        print(f"Successfully synced {stats['synced_users']} authorized users")
+        
+    except Error as e:
+        stats["ok"] = False
+        stats["error"] = str(e)
+        print(f"Error during user sync: {e}")
+    finally:
+        try:
+            main_cursor.close()
+            main_conn.close()
+            local_cursor.close()
+            local_conn.close()
+        except:
+            pass
+    
+    return stats
