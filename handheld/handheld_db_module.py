@@ -16,6 +16,7 @@ def connect_maindb():
             password='Vinceleval423!',
             database='rfid_vehicle_system',  # Using existing database with ALL PRIVILEGES
             ssl_disabled=True,  # Disable SSL to fix version mismatch error
+            connection_timeout=5,  # 5 second timeout to prevent long waits
         )
         print("Connected to the Main Database Successfully")
         return conn
