@@ -178,6 +178,34 @@ except ImportError:
     CAMERA_AVAILABLE = False
     print("Camera module not available, using mock camera")
 
+# Global camera instance to prevent multiple initializations
+_global_picam2 = None
+
+def get_camera():
+    """Get or create the global camera instance"""
+    global _global_picam2
+    if _global_picam2 is None and CAMERA_AVAILABLE:
+        try:
+            _global_picam2 = Picamera2()
+            _global_picam2.start()
+            print("Camera initialized successfully")
+        except Exception as e:
+            print(f"Camera initialization failed: {e}")
+            _global_picam2 = None
+    return _global_picam2
+
+def stop_camera():
+    """Stop and release the global camera instance"""
+    global _global_picam2
+    if _global_picam2 is not None:
+        try:
+            _global_picam2.stop()
+            _global_picam2.close()
+            print("Camera stopped and released")
+        except Exception as e:
+            print(f"Error stopping camera: {e}")
+        _global_picam2 = None
+
 # Camera and menu functions
 def show_main_menu_with_camera():
     """Show main menu and wait for user to press CENTER button to continue"""
@@ -215,17 +243,11 @@ def show_main_menu_with_camera():
             print("RPi.GPIO not available, using keyboard input")
             GPIO_AVAILABLE = False
         
-        # Initialize camera first
-        picam2 = None
-        if CAMERA_AVAILABLE:
-            try:
-                picam2 = Picamera2()
-                picam2.start()
-                print("Camera initialized successfully")
-            except Exception as e:
-                print(f"Camera initialization failed: {e}")
-                picam2 = None
-        else:
+        # Get camera instance (reuse existing or create new)
+        picam2 = get_camera()
+        if picam2 is None and CAMERA_AVAILABLE:
+            print("Warning: Camera not available")
+        elif not CAMERA_AVAILABLE:
             print("Using mock camera")
         
         # Show main menu screen
@@ -304,12 +326,8 @@ def show_main_menu_with_camera():
                     CURRENT_USER_NAME = None
                     CURRENT_USER_ROLE = None
                     
-                    # Signal to restart authentication
-                    if picam2:
-                        try:
-                            picam2.stop()
-                        except:
-                            pass
+                    # Stop camera on logout
+                    stop_camera()
                     return None, False  # Return False to trigger re-authentication
                 
                 elif center_state == GPIO.HIGH:
@@ -1507,6 +1525,20 @@ def main():
                     else:
                         Draw_All_Elements(elements_to_draw)
                     
+                    time.sleep(3)  # Show summary for 3 seconds
+                    
+                    print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
+                    print(f"Violation Summary:")
+                    print(f"  ID: {result.get('evidence_id', 'N/A')}")
+                    print(f"  RFID UID: {scanned_uid}")
+                    print(f"  Previous Violations: {uid_info.get('previous_violations', 0)}")
+                    print(f"  Photo: {photo_path}")
+                    print(f"  Violation: {selected_violation}")
+                    print(f"  Location: Campus Parking Area")
+                    print(f"  Device: HANDHELD_01")
+                    print(f"  Database: {'Recorded' if result['ok'] else 'Failed'}")
+                    print(f"  Storage: {result.get('storage_method', 'unknown')}")
+
                     time.sleep(5)  # Show summary for 5 seconds
                 
                 # Loop back to authentication
@@ -1516,11 +1548,7 @@ def main():
             import traceback
             traceback.print_exc()
             # Clean up camera and GPIO before exit
-            if 'picam2' in locals() and picam2:
-                try:
-                    picam2.stop()
-                except:
-                    pass
+            stop_camera()
             try:
                 import RPi.GPIO as GPIO
                 GPIO.cleanup()
@@ -1531,6 +1559,7 @@ def main():
         print(f"Main error: {e}")
         import traceback
         traceback.print_exc()
+        stop_camera()
         try:
             import RPi.GPIO as GPIO
             GPIO.cleanup()
@@ -1545,7 +1574,8 @@ if __name__ == "__main__":
             Clear_Screen()
         except:
             pass
-        # Clean up GPIO before exit
+        # Clean up camera and GPIO before exit
+        stop_camera()
         try:
             import RPi.GPIO as GPIO
             GPIO.cleanup()
