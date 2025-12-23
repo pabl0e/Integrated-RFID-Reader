@@ -16,6 +16,7 @@ def connect_maindb():
             password='Vinceleval423!',
             database='rfid_vehicle_system',  # Using existing database with ALL PRIVILEGES
             ssl_disabled=True,  # Disable SSL to fix version mismatch error
+            connection_timeout=5,  # 5 second timeout to prevent long waits
         )
         print("Connected to the Main Database Successfully")
         return conn
@@ -426,15 +427,14 @@ def save_auth_cache(users):
 def authenticate_user_by_pin(pin):
     """
     Authenticate user by PIN code.
-    Tries main database first, falls back to local cache if offline.
-    Only allows Admin and Security designations.
-    Admin override PIN "0000" is supported.
+    ONLY checks the local database (authorized_users table).
+    Admin override PIN "0000" is supported for emergencies.
     
     Args:
         pin: 4-digit PIN string
         
     Returns:
-        dict: User record {user_id, full_name, designation, email} if valid, None if invalid
+        dict: User record if valid, None if invalid
     """
     # Check for admin override PIN
     if pin == "0000":
@@ -448,83 +448,167 @@ def authenticate_user_by_pin(pin):
             'auth_method': 'override'
         }
     
-    # Try main database first
-    conn = connect_maindb()
-    if conn:
-        try:
-            cursor = conn.cursor(dictionary=True)
-            
-            # Query users table for matching PIN with active status
-            # Only allow Admin and Security designations
-            # Using actual column names: id, usc_id, email, designation, status
-            query = """
-                SELECT id, usc_id, email, designation 
-                FROM users 
-                WHERE pin = %s 
-                AND status = 'active'
-                AND designation IN ('Admin', 'Security')
-            """
-            
-            cursor.execute(query, (pin,))
-            user = cursor.fetchone()
-            
-            if user:
-                # Map database columns to expected format
-                user_record = {
-                    'user_id': user['id'],
-                    'full_name': user['usc_id'],  # Using USC ID as display name
-                    'designation': user['designation'],
-                    'email': user['email'],
-                    'usc_id': user['usc_id'],
-                    'auth_method': 'database'
-                }
-                
-                print(f"User authenticated: {user_record['full_name']} ({user_record['designation']})")
-                
-                # Update cache with this user
-                cache = load_auth_cache()
-                
-                # Check if user already in cache, remove old entry
-                cache = [u for u in cache if u['user_id'] != user_record['user_id']]
-                
-                # Add user to cache with PIN for offline validation
-                cache.append({
-                    'user_id': user_record['user_id'],
-                    'full_name': user_record['full_name'],
-                    'designation': user_record['designation'],
-                    'email': user_record['email'],
-                    'usc_id': user_record['usc_id'],
-                    'pin': pin  # Store PIN for offline validation
-                })
-                
-                save_auth_cache(cache)
-                
-                return user_record
-            else:
-                print("PIN not found or user not authorized (Admin/Security only)")
-                return None
-                
-        except Error as e:
-            print(f"Database authentication error: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+    # Check local database ONLY
+    conn = connect_localdb()
+    if not conn:
+        print("Local database unavailable")
+        return None
     
-    # Fallback to local cache if database unavailable
-    print("Database unavailable, checking local cache...")
-    cache = load_auth_cache()
-    
-    for user in cache:
-        if user.get('pin') == pin:
-            print(f"User authenticated from cache: {user['full_name']}")
-            return {
-                'user_id': user['user_id'],
-                'full_name': user['full_name'],
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        
+        # Query local authorized_users table
+        query = """
+            SELECT id, usc_id, email, designation, pin
+            FROM authorized_users 
+            WHERE pin = %s 
+            AND status = 'active'
+            AND designation IN ('Admin', 'Security')
+        """
+        
+        cursor.execute(query, (pin,))
+        user = cursor.fetchone()
+        
+        if user:
+            user_record = {
+                'user_id': user['id'],
+                'full_name': user['usc_id'],
                 'designation': user['designation'],
                 'email': user['email'],
                 'usc_id': user['usc_id'],
-                'auth_method': 'cache'
+                'auth_method': 'local_database'
             }
+            print(f"User authenticated: {user_record['full_name']} ({user_record['designation']})")
+            return user_record
+        else:
+            print("PIN not found in local database")
+            return None
+            
+    except Exception as e:
+        print(f"Local database authentication error: {e}")
+        return None
+    finally:
+        if cursor:
+            try:
+                cursor.close()
+            except:
+                pass
+        try:
+            conn.close()
+        except:
+            pass
+
+# ============================================================================
+# AUTHORIZED USERS TABLE AND SYNC FUNCTIONS
+# ============================================================================
+
+def create_authorized_users_table():
+    """Create the authorized_users table in the local database if it doesn't exist"""
+    conn = connect_localdb()
+    if not conn:
+        print("Cannot create authorized_users table - no database connection")
+        return False
     
-    print("PIN not found in cache")
-    return None
+    try:
+        cursor = conn.cursor()
+        
+        create_table_sql = """
+        CREATE TABLE IF NOT EXISTS authorized_users (
+            id INT PRIMARY KEY,
+            usc_id VARCHAR(50),
+            email VARCHAR(255),
+            designation VARCHAR(50),
+            pin VARCHAR(4),
+            status VARCHAR(20) DEFAULT 'active',
+            last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_pin (pin),
+            INDEX idx_designation (designation)
+        )
+        """
+        
+        cursor.execute(create_table_sql)
+        conn.commit()
+        print("authorized_users table created/verified successfully")
+        return True
+        
+    except Error as e:
+        print(f"Error creating authorized_users table: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def sync_authorized_users_from_main():
+    """
+    Fetch Admin and Security users from main database and update local database.
+    This should be called by the auto_sync_service periodically.
+    """
+    print("Syncing authorized users from main database...")
+    
+    # First ensure the local table exists
+    create_authorized_users_table()
+    
+    main_conn = connect_maindb()
+    if not main_conn:
+        print("Cannot sync users - main database unreachable")
+        return {"ok": False, "error": "Main database unreachable", "synced_users": 0}
+    
+    local_conn = connect_localdb()
+    if not local_conn:
+        main_conn.close()
+        print("Cannot sync users - local database unreachable")
+        return {"ok": False, "error": "Local database unreachable", "synced_users": 0}
+    
+    stats = {"ok": True, "synced_users": 0}
+    
+    try:
+        main_cursor = main_conn.cursor(dictionary=True)
+        local_cursor = local_conn.cursor()
+        
+        # Fetch all Admin and Security users with PINs from main database
+        query = """
+            SELECT id, usc_id, email, designation, pin, status
+            FROM users
+            WHERE designation IN ('Admin', 'Security')
+            AND pin IS NOT NULL
+            AND status = 'active'
+        """
+        
+        main_cursor.execute(query)
+        users = main_cursor.fetchall()
+        
+        print(f"Found {len(users)} authorized users in main database")
+        
+        for user in users:
+            try:
+                replace_query = """
+                    REPLACE INTO authorized_users 
+                    (id, usc_id, email, designation, pin, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                local_cursor.execute(replace_query, (
+                    user['id'], user['usc_id'], user['email'],
+                    user['designation'], user['pin'], user['status']
+                ))
+                stats["synced_users"] += 1
+            except Error as e:
+                print(f"Error syncing user {user['id']}: {e}")
+        
+        local_conn.commit()
+        print(f"Successfully synced {stats['synced_users']} authorized users")
+        
+    except Error as e:
+        stats["ok"] = False
+        stats["error"] = str(e)
+        print(f"Error during user sync: {e}")
+    finally:
+        try:
+            main_cursor.close()
+            main_conn.close()
+            local_cursor.close()
+            local_conn.close()
+        except:
+            pass
+    
+    return stats

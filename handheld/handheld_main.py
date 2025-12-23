@@ -10,6 +10,7 @@ Records violations directly to violations table with required fields:
 import sys
 import time
 import os
+import datetime
 from PIL import ImageFont
 from handheld_rfid_module import scan_rfid_for_enforcement
 from handheld_db_module import store_evidence, check_uid, add_new_uid
@@ -177,6 +178,34 @@ except ImportError:
     CAMERA_AVAILABLE = False
     print("Camera module not available, using mock camera")
 
+# Global camera instance to prevent multiple initializations
+_global_picam2 = None
+
+def get_camera():
+    """Get or create the global camera instance"""
+    global _global_picam2
+    if _global_picam2 is None and CAMERA_AVAILABLE:
+        try:
+            _global_picam2 = Picamera2()
+            _global_picam2.start()
+            print("Camera initialized successfully")
+        except Exception as e:
+            print(f"Camera initialization failed: {e}")
+            _global_picam2 = None
+    return _global_picam2
+
+def stop_camera():
+    """Stop and release the global camera instance"""
+    global _global_picam2
+    if _global_picam2 is not None:
+        try:
+            _global_picam2.stop()
+            _global_picam2.close()
+            print("Camera stopped and released")
+        except Exception as e:
+            print(f"Error stopping camera: {e}")
+        _global_picam2 = None
+
 # Camera and menu functions
 def show_main_menu_with_camera():
     """Show main menu and wait for user to press CENTER button to continue"""
@@ -214,17 +243,11 @@ def show_main_menu_with_camera():
             print("RPi.GPIO not available, using keyboard input")
             GPIO_AVAILABLE = False
         
-        # Initialize camera first
-        picam2 = None
-        if CAMERA_AVAILABLE:
-            try:
-                picam2 = Picamera2()
-                picam2.start()
-                print("Camera initialized successfully")
-            except Exception as e:
-                print(f"Camera initialization failed: {e}")
-                picam2 = None
-        else:
+        # Get camera instance (reuse existing or create new)
+        picam2 = get_camera()
+        if picam2 is None and CAMERA_AVAILABLE:
+            print("Warning: Camera not available")
+        elif not CAMERA_AVAILABLE:
             print("Using mock camera")
         
         # Show main menu screen
@@ -287,10 +310,14 @@ def show_main_menu_with_camera():
                     print("UP+DOWN pressed - Logging out")
                     time.sleep(0.5)
                     
-                    # Show logout screen
+                    # Access global user session variables
+                    global CURRENT_USER_ID, CURRENT_USER_NAME, CURRENT_USER_ROLE
+                    
+                    # Show logout screen with current user name
                     logout_elements = [
-                        ('text', (10, 40, "LOGGING OUT", font), {'fill': 'yellow'}),
-                        ('text', (10, 70, "Goodbye!", font), {'fill': 'white'})
+                        ('text', (10, 30, "LOGGING OUT", font), {'fill': 'yellow'}),
+                        ('text', (10, 50, f"{CURRENT_USER_NAME}", font), {'fill': 'cyan'}),
+                        ('text', (10, 75, "Goodbye!", font), {'fill': 'white'})
                     ]
                     if OLED_AVAILABLE:
                         Clear_Screen()
@@ -298,17 +325,12 @@ def show_main_menu_with_camera():
                     time.sleep(2)
                     
                     # Clear user session
-                    global CURRENT_USER_ID, CURRENT_USER_NAME, CURRENT_USER_ROLE
                     CURRENT_USER_ID = None
                     CURRENT_USER_NAME = None
                     CURRENT_USER_ROLE = None
                     
-                    # Signal to restart authentication
-                    if picam2:
-                        try:
-                            picam2.stop()
-                        except:
-                            pass
+                    # Stop camera on logout
+                    stop_camera()
                     return None, False  # Return False to trigger re-authentication
                 
                 elif center_state == GPIO.HIGH:
@@ -605,7 +627,7 @@ def run_photo_capture(picam2):
                             captured_image = Image.open(full_photo_path)
                             Clear_Screen()
                             Display_Image(captured_image)
-                            time.sleep(2)  # Show preview for 2 seconds
+                            time.sleep(5)  # Show preview for 5 seconds
                         except Exception as load_error:
                             print(f"Could not load image: {load_error}")
                     
@@ -1110,7 +1132,7 @@ def show_pin_entry_screen():
         pin_display = ""
         for i in range(max_digits):
             if i < len(entered_digits):
-                pin_display += "●"
+                pin_display += "*"  # Use asterisk for ASCII safety
             elif i == len(entered_digits):
                 pin_display += str(current_digit)  # Show current digit selection
             else:
@@ -1121,9 +1143,9 @@ def show_pin_entry_screen():
             ('text', (10, 5, "PIN REQUIRED", font), {'fill': 'white'}),
             ('text', (5, 25, "Enter 4-digit PIN", font), {'fill': 'cyan'}),
             ('text', (15, 45, pin_display, font), {'fill': 'yellow'}),
-            ('text', (5, 70, "UP/DOWN: Change", font), {'fill': 'white'}),
-            ('text', (5, 85, "RIGHT: Confirm", font), {'fill': 'white'}),
-            ('text', (5, 100, "LEFT: Delete", font), {'fill': 'white'})
+            ('text', (5, 70, "UP/DOWN: Change", font), {'fill': 'red'}),
+            ('text', (5, 85, "RIGHT: Confirm", font), {'fill': 'cyan'}),
+            ('text', (5, 100, "LEFT: Delete", font), {'fill': 'blue'})
         ]
         
         if OLED_AVAILABLE:
@@ -1312,6 +1334,24 @@ def authenticate_user():
             print("Authentication cancelled")
             return None
         
+        # Show verifying screen while checking PIN
+        try:
+            from PIL import ImageFont
+            font = ImageFont.load_default()
+        except:
+            font = None
+        
+        verifying_elements = [
+            ('text', (10, 35, "VERIFYING", font), {'fill': 'yellow'}),
+            ('text', (10, 55, "PIN...", font), {'fill': 'yellow'}),
+            ('text', (10, 85, "Please wait", font), {'fill': 'white'})
+        ]
+        if OLED_AVAILABLE:
+            Clear_Screen()
+            Draw_All_Elements(verifying_elements)
+        else:
+            Draw_All_Elements(verifying_elements)
+        
         # Validate PIN
         user = authenticate_user_by_pin(entered_pin)
         
@@ -1402,176 +1442,167 @@ def main():
                 
                 print(f"Authenticated as: {CURRENT_USER_NAME} (ID: {CURRENT_USER_ID}, Role: {CURRENT_USER_ROLE})")
                 
-                # ========== MAIN SYSTEM LOOP ==========
-                print("Two violation types:")
-                print("1. Parking in No Parking Zones")
-                print("2. Unauthorized Parking in designated Parking spots")
+                # ========== INNER LOOP - Stay logged in until logout ==========
+                while True:
+                    print("Two violation types:")
+                    print("1. Parking in No Parking Zones")
+                    print("2. Unauthorized Parking in designated Parking spots")
+                    
+                    # Show main menu and pre-warm camera
+                    picam2, should_continue = show_main_menu_with_camera()
+                    
+                    if not should_continue:
+                        print("User logged out - returning to login screen")
+                        break  # Break inner loop, go back to authentication
+                    
+                    # Step 1: RFID Scanning (Required field)
+                    print("Step 1: Scanning RFID tag (Required)...")
+                    scanned_uid = run_rfid_scanner()
+                    
+                    if not scanned_uid:
+                        print("RFID scanning failed. Cannot proceed without RFID UID.")
+                        continue
+                    
+                    print(f"RFID UID captured: {scanned_uid}")
+                    
+                    # Check for previous violations
+                    uid_info = check_uid(scanned_uid)
+                    if uid_info['previous_violations'] > 0:
+                        print(f"WARNING: This RFID has {uid_info['previous_violations']} previous violations")
+                    
+                    # Step 2: Photo capture (Required field)
+                    print("Step 2: Taking evidence photo (Required)...")
+                    photo_success, photo_path = run_photo_capture(picam2)
+                    
+                    if not photo_success or not photo_path:
+                        print("Photo capture failed. Cannot proceed without evidence photo.")
+                        continue
+                    
+                    print(f"Photo captured: {photo_path}")
+                    
+                    # Step 3: Violation type selection (Required field) - Only 2 options
+                    print("Step 3: Selecting violation type (Required)...")
+                    selected_violation = run_violation_selector()
+                    
+                    if not selected_violation:
+                        print("Violation selection failed. Cannot proceed without violation type.")
+                        continue
+                    
+                    print(f"Violation selected: {selected_violation}")
+                    
+                    # Step 4: Store violation with authenticated user
+                    print("Step 4: Recording violation in database...")
+                    result = store_evidence(
+                        rfid_uid=scanned_uid,
+                        photo_path=photo_path,
+                        violation_type=selected_violation,
+                        timestamp=datetime.datetime.now(),
+                        location="Campus Parking Area",
+                        device_id="HANDHELD_01",
+                        reported_by=CURRENT_USER_ID  # Pass authenticated user ID
+                    )
+                    
+                    if result["ok"]:
+                        print(f"Parking violation recorded successfully! ID: {result['evidence_id']}")
+                        # Show success message
+                        elements_to_draw = [
+                            ('text', (10, 10, "PARKING", font), {'fill': 'green'}),
+                            ('text', (10, 25, "VIOLATION", font), {'fill': 'green'}),
+                            ('text', (10, 40, "RECORDED", font), {'fill': 'green'}),
+                            ('text', (10, 60, f"ID: {result['evidence_id']}", font), {'fill': 'white'}),
+                            ('text', (10, 75, "Enforcement", font), {'fill': 'cyan'}),
+                            ('text', (10, 90, "Complete!", font), {'fill': 'cyan'})
+                        ]
+                    else:
+                        print(f"Failed to record violation: {result['error']}")
+                        # Show error message
+                        elements_to_draw = [
+                            ('text', (10, 30, "RECORDING", font), {'fill': 'red'}),
+                            ('text', (10, 50, "FAILED", font), {'fill': 'red'}),
+                            ('text', (10, 70, "Check database", font), {'fill': 'yellow'})
+                        ]
                 
-                # Show main menu and pre-warm camera
-                picam2, should_continue = show_main_menu_with_camera()
+                    if OLED_AVAILABLE:
+                        Clear_Screen()
+                        Draw_All_Elements(elements_to_draw)
+                    else:
+                        Draw_All_Elements(elements_to_draw)
+                    
+                    time.sleep(3)  # Show summary for 3 seconds
+                    
+                    # Show detailed violation log summary on OLED
+                    if OLED_AVAILABLE:
+                        # Determine database type from storage method
+                        db_type = "MySQL" if result.get('storage_method', '').lower() == 'mysql' else "Local"
+                        db_status = "OK Saved" if result["ok"] else "X Failed"
+                        
+                        # Truncate UID for display (show first 8 characters)
+                        display_uid = scanned_uid[:8] if len(scanned_uid) > 8 else scanned_uid
                 
-                if not should_continue:
-                    print("User logged out - returning to login screen")
-                    continue  # Go back to authentication
+                        # Truncate violation type for display
+                        violation_short = selected_violation[:20] if len(selected_violation) > 20 else selected_violation
+                        if len(selected_violation) > 20:
+                            violation_lines = selected_violation.split()
+                            mid = len(violation_lines) // 2
+                            violation_line1 = " ".join(violation_lines[:mid])[:16]
+                            violation_line2 = " ".join(violation_lines[mid:])[:16]
+                        else:
+                            violation_line1 = violation_short
+                            violation_line2 = ""
+                        
+                        # Get violation ID for tracking
+                        violation_id = result.get('evidence_id', 'N/A')
+                        display_id = str(violation_id)[:8] if len(str(violation_id)) > 8 else str(violation_id)
+                        
+                        # Get previous violations count for this UID
+                        previous_count = uid_info.get('previous_violations', 0)
+                        
+                        summary_elements = [
+                            ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
+                            ('text', (5, 16, f"ID: {display_id}", font), {'fill': 'green'}),
+                            ('text', (5, 26, f"UID: {display_uid}", font), {'fill': 'cyan'}),
+                            ('text', (5, 36, f"Past Violations: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
+                            ('text', (5, 46, "Violation Type:", font), {'fill': 'white'}),
+                            ('text', (5, 56, violation_line1, font), {'fill': 'yellow'}),
+                        ]
+                        
+                        # Add second line of violation if needed
+                        if violation_line2:
+                            summary_elements.append(('text', (5, 66, violation_line2, font), {'fill': 'yellow'}))
+                            db_y_pos = 81
+                        else:
+                            db_y_pos = 71
+                        
+                        # Add database status
+                        summary_elements.extend([
+                            ('text', (5, db_y_pos, f"DB: {db_type}", font), {'fill': 'white'}),
+                            ('text', (5, db_y_pos + 15, db_status, font), {'fill': 'green' if result["ok"] else 'red'})
+                        ])
+                        
+                        Clear_Screen()
+                        Draw_All_Elements(summary_elements)
+                        time.sleep(5)  # Show summary for 5 seconds
+                    
+                    print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
+                    print(f"Violation Summary:")
+                    print(f"  ID: {result.get('evidence_id', 'N/A')}")
+                    print(f"  RFID UID: {scanned_uid}")
+                    print(f"  Previous Violations: {uid_info.get('previous_violations', 0)}")
+                    print(f"  Photo: {photo_path}")
+                    print(f"  Violation: {selected_violation}")
+                    print(f"  Location: Campus Parking Area")
+                    print(f"  Device: HANDHELD_01")
+                    print(f"  Database: {'Recorded' if result['ok'] else 'Failed'}")
+                    print(f"  Storage: {result.get('storage_method', 'unknown')}")
                 
-                # Step 1: RFID Scanning (Required field)
-            print("Step 1: Scanning RFID tag (Required)...")
-            scanned_uid = run_rfid_scanner()
-            
-            if not scanned_uid:
-                print("RFID scanning failed. Cannot proceed without RFID UID.")
-                return
-            
-            print(f"RFID UID captured: {scanned_uid}")
-            
-            # Check for previous violations
-            uid_info = check_uid(scanned_uid)
-            if uid_info['previous_violations'] > 0:
-                print(f"WARNING: This RFID has {uid_info['previous_violations']} previous violations")
-            
-            # Step 2: Photo capture (Required field)
-            print("Step 2: Taking evidence photo (Required)...")
-            photo_success, photo_path = run_photo_capture(picam2)
-            
-            if not photo_success or not photo_path:
-                print("Photo capture failed. Cannot proceed without evidence photo.")
-                return
-            
-            print(f"Photo captured: {photo_path}")
-            
-            # Step 3: Violation type selection (Required field) - Only 2 options
-            print("Step 3: Selecting violation type (Required)...")
-            selected_violation = run_violation_selector()
-            
-            if not selected_violation:
-                print("Violation selection failed. Cannot proceed without violation type.")
-                return
-            
-            print(f"Violation selected: {selected_violation}")
-            
-            # Step 4: Store violation with authenticated user
-            print("Step 4: Recording violation in database...")
-            result = store_evidence(
-                rfid_uid=scanned_uid,
-                photo_path=photo_path,
-                violation_type=selected_violation,
-                timestamp=datetime.datetime.now(),
-                location="Campus Parking Area",
-                device_id="HANDHELD_01",
-                reported_by=CURRENT_USER_ID  # Pass authenticated user ID
-            )
-            
-            if result["ok"]:
-                print(f"Parking violation recorded successfully! ID: {result['evidence_id']}")
-                # Show success message
-                elements_to_draw = [
-                    ('text', (10, 10, "PARKING", font), {'fill': 'green'}),
-                    ('text', (10, 25, "VIOLATION", font), {'fill': 'green'}),
-                    ('text', (10, 40, "RECORDED", font), {'fill': 'green'}),
-                    ('text', (10, 60, f"ID: {result['evidence_id']}", font), {'fill': 'white'}),
-                    ('text', (10, 75, "Enforcement", font), {'fill': 'cyan'}),
-                    ('text', (10, 90, "Complete!", font), {'fill': 'cyan'})
-                ]
-            else:
-                print(f"Failed to record violation: {result['error']}")
-                # Show error message
-                elements_to_draw = [
-                    ('text', (10, 30, "RECORDING", font), {'fill': 'red'}),
-                    ('text', (10, 50, "FAILED", font), {'fill': 'red'}),
-                    ('text', (10, 70, "Check database", font), {'fill': 'yellow'})
-                ]
-        
-            if OLED_AVAILABLE:
-                Clear_Screen()
-                Draw_All_Elements(elements_to_draw)
-            else:
-                Draw_All_Elements(elements_to_draw)
-        
-            time.sleep(3)  # Show initial result screen
-            
-            # Show detailed violation log summary on OLED
-            if OLED_AVAILABLE:
-                # Determine database type from storage method
-                db_type = "MySQL" if result.get('storage_method', '').lower() == 'mysql' else "Local"
-                db_status = "OK Saved" if result["ok"] else "X Failed"
-                
-                # Truncate UID for display (show first 8 characters)
-                display_uid = scanned_uid[:8] if len(scanned_uid) > 8 else scanned_uid
-                
-                # Truncate violation type for display
-                violation_short = selected_violation[:20] if len(selected_violation) > 20 else selected_violation
-                if len(selected_violation) > 20:
-                    violation_lines = selected_violation.split()
-                    mid = len(violation_lines) // 2
-                    violation_line1 = " ".join(violation_lines[:mid])[:16]
-                    violation_line2 = " ".join(violation_lines[mid:])[:16]
-                else:
-                    violation_line1 = violation_short
-                    violation_line2 = ""
-                
-                # Get violation ID for tracking
-                violation_id = result.get('evidence_id', 'N/A')
-                display_id = str(violation_id)[:8] if len(str(violation_id)) > 8 else str(violation_id)
-                
-                # Get previous violations count for this UID
-                previous_count = uid_info.get('previous_violations', 0)
-                
-                summary_elements = [
-                    ('text', (5, 5, "VIOLATION LOG", font), {'fill': 'white'}),
-                    ('text', (5, 16, f"ID: {display_id}", font), {'fill': 'green'}),
-                    ('text', (5, 26, f"UID: {display_uid}", font), {'fill': 'cyan'}),
-                    ('text', (5, 36, f"Past Violations: {previous_count}", font), {'fill': 'orange' if previous_count > 0 else 'white'}),
-                    ('text', (5, 46, "Violation Type:", font), {'fill': 'white'}),
-                    ('text', (5, 56, violation_line1, font), {'fill': 'yellow'}),
-                ]
-                
-                # Add second line of violation if needed
-                if violation_line2:
-                    summary_elements.append(('text', (5, 66, violation_line2, font), {'fill': 'yellow'}))
-                    db_y_pos = 81
-                else:
-                    db_y_pos = 71
-                
-                # Add database status
-                summary_elements.extend([
-                    ('text', (5, db_y_pos, f"DB: {db_type}", font), {'fill': 'white'}),
-                    ('text', (5, db_y_pos + 15, db_status, font), {'fill': 'green' if result["ok"] else 'red'})
-                ])
-                
-                Clear_Screen()
-                Draw_All_Elements(summary_elements)
-                time.sleep(5)  # Show summary for 5 seconds
-            
-            print("\n=== PARKING VIOLATION ENFORCEMENT COMPLETE ===")
-            print(f"Violation Summary:")
-            print(f"  ID: {result.get('evidence_id', 'N/A')}")
-            print(f"  RFID UID: {scanned_uid}")
-            print(f"  Previous Violations: {uid_info.get('previous_violations', 0)}")
-            print(f"  Photo: {photo_path}")
-            print(f"  Violation: {selected_violation}")
-            print(f"  Location: Campus Parking Area")
-            print(f"  Device: HANDHELD_01")
-            print(f"  Database: {'Recorded' if result['ok'] else 'Failed'}")
-            print(f"  Storage: {result.get('storage_method', 'unknown')}")
-            
-            time.sleep(5)
-            
-            # Clean up camera
-            if picam2:
-                try:
-                    picam2.stop()
-                    print("Camera stopped")
-                except:
-                    pass
+                # Loop back to main menu (inner loop continues)
 
         except Exception as e:
             print(f"Main system error: {e}")
+            import traceback
+            traceback.print_exc()
             # Clean up camera and GPIO before exit
-            if 'picam2' in locals() and picam2:
-                try:
-                    picam2.stop()
-                except:
-                    pass
+            stop_camera()
             try:
                 import RPi.GPIO as GPIO
                 GPIO.cleanup()
@@ -1580,6 +1611,9 @@ def main():
 
     except Exception as e:
         print(f"Main error: {e}")
+        import traceback
+        traceback.print_exc()
+        stop_camera()
         try:
             import RPi.GPIO as GPIO
             GPIO.cleanup()
@@ -1594,7 +1628,8 @@ if __name__ == "__main__":
             Clear_Screen()
         except:
             pass
-        # Clean up GPIO before exit
+        # Clean up camera and GPIO before exit
+        stop_camera()
         try:
             import RPi.GPIO as GPIO
             GPIO.cleanup()
@@ -1602,273 +1637,3 @@ if __name__ == "__main__":
             pass
         print("\nParking violations enforcement system interrupted.")
         sys.exit(0)
-
-def show_pin_entry_screen():
-    """
-    Show PIN entry screen with 4-digit input (digits 0-3 only).
-    Uses UP/DOWN to cycle digits, CENTER to confirm, BACK to delete.
-    
-    Returns:
-        str: Entered PIN (4 digits) or None if cancelled
-    """
-    print("=== PIN AUTHENTICATION ===")
-    
-    try:
-        from PIL import ImageFont
-        font = ImageFont.load_default()
-    except:
-        font = None
-    
-    # Initialize GPIO if available
-    GPIO_AVAILABLE = False
-    try:
-        import RPi.GPIO as GPIO
-        GPIO.setmode(GPIO.BCM)
-        UP_PIN = 4
-        DOWN_PIN = 27
-        CENTER_PIN = 17
-        BACK_PIN = 26
-        GPIO.setup([UP_PIN, DOWN_PIN, CENTER_PIN, BACK_PIN], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-        GPIO_AVAILABLE = True
-    except:
-        GPIO_AVAILABLE = False
-        print("GPIO not available, using keyboard input")
-    
-    # PIN entry state
-    entered_digits = []
-    current_digit = 0  # Currently selected digit (0-3)
-    max_digits = 4
-    
-    def draw_pin_screen():
-        """Draw PIN entry screen"""
-        # Build PIN display string with asterisks for entered digits
-        pin_display = ""
-        for i in range(max_digits):
-            if i < len(entered_digits):
-                pin_display += "●"
-            elif i == len(entered_digits):
-                pin_display += str(current_digit)  # Show current digit selection
-            else:
-                pin_display += "_"
-            pin_display += " "
-        
-        elements = [
-            ('text', (10, 5, "PIN REQUIRED", font), {'fill': 'white'}),
-            ('text', (5, 25, "Enter 4-digit PIN", font), {'fill': 'cyan'}),
-            ('text', (15, 45, pin_display, font), {'fill': 'yellow'}),
-            ('text', (5, 70, "UP/DOWN: Change", font), {'fill': 'white'}),
-            ('text', (5, 85, "RIGHT: Confirm", font), {'fill': 'white'}),
-            ('text', (5, 100, "LEFT: Delete", font), {'fill': 'white'})
-        ]
-        
-        if OLED_AVAILABLE:
-            Clear_Screen()
-            Draw_All_Elements(elements)
-        else:
-            Draw_All_Elements(elements)
-    
-    # Main PIN entry loop
-    while True:
-        draw_pin_screen()
-        
-        if GPIO_AVAILABLE:
-            # Wait for button press
-            while True:
-                up_state = GPIO.input(UP_PIN)
-                down_state = GPIO.input(DOWN_PIN)
-                center_state = GPIO.input(CENTER_PIN)
-                back_state = GPIO.input(BACK_PIN)
-                
-                if up_state == GPIO.HIGH:
-                    # Increment digit (0-3 only)
-                    current_digit = (current_digit + 1) % 4
-                    time.sleep(0.2)  # Debounce
-                    break
-                
-                elif down_state == GPIO.HIGH:
-                    # Decrement digit (0-3 only)
-                    current_digit = (current_digit - 1) % 4
-                    time.sleep(0.2)  # Debounce
-                    break
-                
-                elif center_state == GPIO.HIGH:
-                    # Confirm current digit
-                    entered_digits.append(current_digit)
-                    current_digit = 0  # Reset for next digit
-                    time.sleep(0.3)  # Debounce
-                    
-                    # Check if PIN complete
-                    if len(entered_digits) == max_digits:
-                        pin_string = ''.join(map(str, entered_digits))
-                        print(f"PIN entered: {pin_string}")
-                        return pin_string
-                    break
-                
-                elif back_state == GPIO.HIGH:
-                    # Delete last digit
-                    if len(entered_digits) > 0:
-                        entered_digits.pop()
-                        current_digit = 0
-                        time.sleep(0.3)  # Debounce
-                    else:
-                        # Cancel if no digits entered
-                        print("PIN entry cancelled")
-                        return None
-                    break
-                
-                time.sleep(0.05)
-        else:
-            # Keyboard fallback
-            print(f"\nCurrent PIN: {''.join(map(str, entered_digits))}")
-            print(f"Current digit: {current_digit}")
-            print("u=up, d=down, c=confirm, b=back, q=cancel")
-            user_input = input("> ").strip().lower()
-            
-            if user_input == 'u':
-                current_digit = (current_digit + 1) % 4
-            elif user_input == 'd':
-                current_digit = (current_digit - 1) % 4
-            elif user_input == 'c':
-                entered_digits.append(current_digit)
-                current_digit = 0
-                if len(entered_digits) == max_digits:
-                    pin_string = ''.join(map(str, entered_digits))
-                    return pin_string
-            elif user_input == 'b':
-                if len(entered_digits) > 0:
-                    entered_digits.pop()
-                    current_digit = 0
-                else:
-                    return None
-            elif user_input == 'q':
-                return None
-
-
-def show_login_screen(user_name, role):
-    """Show successful login screen with user info"""
-    print(f"=== LOGGED IN: {user_name} ===")
-    
-    try:
-        from PIL import ImageFont
-        font = ImageFont.load_default()
-    except:
-        font = None
-    
-    elements = [
-        ('text', (10, 20, "LOGIN SUCCESS", font), {'fill': 'green'}),
-        ('text', (10, 40, f"Welcome!", font), {'fill': 'white'}),
-        ('text', (10, 55, user_name[:18], font), {'fill': 'cyan'}),
-        ('text', (10, 75, f"Role: {role.upper()}", font), {'fill': 'yellow'}),
-        ('text', (10, 100, "Loading menu...", font), {'fill': 'white'})
-    ]
-    
-    if OLED_AVAILABLE:
-        Clear_Screen()
-        Draw_All_Elements(elements)
-    else:
-        Draw_All_Elements(elements)
-    
-    time.sleep(2)
-
-
-def show_login_failed_screen(attempts_left):
-    """Show failed login screen"""
-    print("=== LOGIN FAILED ===")
-    
-    try:
-        from PIL import ImageFont
-        font = ImageFont.load_default()
-    except:
-        font = None
-    
-    elements = [
-        ('text', (10, 20, "LOGIN FAILED", font), {'fill': 'red'}),
-        ('text', (10, 45, "Invalid PIN", font), {'fill': 'yellow'}),
-        ('text', (10, 70, f"Attempts left: {attempts_left}", font), {'fill': 'white'}),
-        ('text', (10, 95, "Try again...", font), {'fill': 'cyan'})
-    ]
-    
-    if OLED_AVAILABLE:
-        Clear_Screen()
-        Draw_All_Elements(elements)
-    else:
-        Draw_All_Elements(elements)
-    
-    time.sleep(2)
-
-
-def show_lockout_screen(seconds):
-    """Show lockout screen with countdown"""
-    print(f"=== LOCKED OUT FOR {seconds} SECONDS ===")
-    
-    try:
-        from PIL import ImageFont
-        font = ImageFont.load_default()
-    except:
-        font = None
-    
-    elements = [
-        ('text', (10, 15, "TOO MANY", font), {'fill': 'red'}),
-        ('text', (10, 35, "FAILED ATTEMPTS", font), {'fill': 'red'}),
-        ('text', (10, 60, "System Locked", font), {'fill': 'yellow'}),
-        ('text', (10, 85, f"Wait {seconds}s", font), {'fill': 'white'})
-    ]
-    
-    if OLED_AVAILABLE:
-        Clear_Screen()
-        Draw_All_Elements(elements)
-    else:
-        Draw_All_Elements(elements)
-
-
-def authenticate_user():
-    """
-    Main authentication flow with PIN entry and validation.
-    Implements 3-attempt limit with 30-second lockout.
-    
-    Returns:
-        dict: User record if successful, None if failed
-    """
-    from handheld_db_module import authenticate_user_by_pin
-    
-    max_attempts = 3
-    attempts_left = max_attempts
-    lockout_duration = 30  # seconds
-    
-    while attempts_left > 0:
-        # Show PIN entry screen
-        entered_pin = show_pin_entry_screen()
-        
-        if entered_pin is None:
-            # User cancelled
-            print("Authentication cancelled")
-            return None
-        
-        # Validate PIN
-        user = authenticate_user_by_pin(entered_pin)
-        
-        if user:
-            # Success
-            show_login_screen(user['full_name'], user['designation'])
-            return user
-        else:
-            # Failed
-            attempts_left -= 1
-            
-            if attempts_left > 0:
-                show_login_failed_screen(attempts_left)
-            else:
-                # Lockout
-                show_lockout_screen(lockout_duration)
-                
-                # Countdown lockout with screen updates every 5 seconds
-                for remaining in range(lockout_duration, 0, -5):
-                    time.sleep(5)
-                    if remaining > 5:
-                        show_lockout_screen(remaining - 5)
-                
-                # Reset attempts after lockout
-                attempts_left = max_attempts
-                print("Lockout ended, please try again")
-    
-    return None
